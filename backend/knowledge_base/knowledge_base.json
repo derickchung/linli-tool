@@ -1,0 +1,429 @@
+{
+  "knowledge_base_meta": {
+    "project": "LinLi Tool 鄰里工具",
+    "purpose": "共用知識庫，供兩個獨立功能查詢：(1) A2 情境推薦工具、(2) U1 工具操作指引助理。資料共用一份，查詢函式各自獨立，不互相依賴。",
+    "version": "1.3.1",
+    "last_updated": "2026-08-19",
+    "schema_ref": "對齊 RAG_AI助理_功能規格書.md 第 4.1 節 chunk 格式",
+    "note": "來源可信度分五級：[official_manual]=原廠官方說明書/官網規格，[user_review]=真實使用者開箱/實測心得（非原廠文件，但為真實操作經驗，可信度高於單純推導），[regulation]=政府法規/公部門安全資料，[inferred]=依產品機制合理推導但非逐字引用，[unverified_series]=引用同系列其他型號官方文件推定適用。每筆 chunk 的 source_ref 標明其等級，部分內容為多來源合併時會同時標註兩個等級。 v1.3 新增「損壞判定標準」類別：供 Check-out 影像比對（見 SPEC_04）判定 MINOR_DIFF/DAMAGE_DETECTED 時的具體依據，僅涵蓋『照片可判定』項目；功能性故障（如馬達是否還能啟動）明確排除於賠償池覆蓋範圍外，走人工爭議協商，非本類別涵蓋內容。 v1.3.1 修正：3 筆「損壞判定標準」chunk 的 tool_category 誤用行銷分類（居家清潔/娛樂活動/露營用品），已改回對齊 knowledge_base 既有 tool_category enum（高壓清洗機/投影機/視聽器材/露營帳篷），由 Claude Code 實作驗證時發現。",
+    "query_functions": {
+      "find_tool_by_scenario": {
+        "used_by": "A2（租借端 Alex - AI RAG 智慧推薦工具，發生於選定工具之前）",
+        "queries_field": "category=\"使用情境標籤\" 底下的 use_case_tags",
+        "input": "自然語言情境描述（例：「牆上想釘層板」）",
+        "output": "候選工具清單（tool_id 陣列）",
+        "note": "MVP 階段用關鍵字比對 use_case_tags 即可，範圍僅 5 項工具，不需向量檢索"
+      },
+      "find_content_by_tool": {
+        "used_by": "U1（租借端 Alex - 取件後操作安全指引，發生於已知工具之後）",
+        "queries_field": "category=\"操作手冊\" / \"安全警語\" / \"常見問題\"，以 tool_id 過濾",
+        "input": "tool_id + 使用者提問（可選）",
+        "output": "操作重點 + 安全警語 + 引用來源",
+        "note": "對應規格書 UC-1/UC-2"
+      },
+      "get_damage_criteria": {
+        "used_by": "Check-out AI 影像比對（見 SPEC_04_Pickup_Handover.md），判定損壞等級並計算賠償池賠付金額",
+        "queries_field": "category=\"損壞判定標準\"，以 tool_id 過濾",
+        "input": "tool_id",
+        "output": "MINOR_DIFF/DAMAGE_DETECTED 判定標準與對應賠付比例；功能性故障項目明確排除，需另走人工爭議協商",
+        "note": "v1.3 新增；僅涵蓋照片可判定項目，非涵蓋開機測試等功能性驗證"
+      }
+    }
+  },
+  "chunks": [
+    {
+      "chunk_id": "drill-0001",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "規格",
+      "content": "額定電壓 18V；最大扭力(弱/強) 21/50 Nm；空載轉速(第1段/第2段) 0-500/0-1900 rpm；最大震動率 27,000 bpm；夾頭容量 1.5-13mm；重量(不含電池) 0.99kg；扭力設定 20+2 段；最大鑽孔能力(木材/鋼材/磚牆) 35/10/10mm。",
+      "source_ref": "[official_manual] 博世台灣官網規格頁 (bosch-pt.com.tw) + 特力屋商品頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "drill-0002",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "套裝內容",
+      "content": "套裝內含：機台 x1、充電器 x1、電池 18V 2.0Ah x1（單電池，無備用電池）、手提箱 x1；鑽頭組共 30 件，內含鍍鈦鑽頭 11 支、水泥鑽頭 4 支、木工鑽頭 4 支、起子頭 10 支、接桿 1 支。",
+      "source_ref": "[official_manual] 特力屋商品頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "drill-0003",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "操作手冊",
+      "content": "操作模式設定環（機身刻有圖示）：轉到「鑽孔」圖示可進行一般木材/金屬鑽孔；轉到「起子」圖示用於鎖螺絲，需搭配扭力環設定；轉到「震動鑽孔」圖示用於磚牆/水泥鑽孔。扭力環可調 20 段，起子模式下達到設定扭力鑽頭會自動停轉，避免螺絲滑牙或鎖太深。正反轉切換鈕僅能在電鑽靜止時切換，推到底一邊為「鑽孔/鎖入」，另一邊為「退出/鬆開」。二段變速鈕僅能在靜止時切換，且務必推到底，否則可能損壞機器；低速段適合大直徑鑽孔或鎖螺絲，高速段適合小直徑鑽孔。LED 警示燈操作中閃 3 下代表電量偏低，靜止時閃 3 下代表過熱保護啟動，此時性能會受限直到降溫。",
+      "source_ref": "[official_manual] 博世原廠說明手冊 GSR|GSB 185-LI (1 609 92A 8JU, 2023.02) 繁體中文版第 46-51 頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "drill-0004",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "安全警語",
+      "content": "磚牆震動鑽孔時應配戴耳部防護，避免聽力受損。若鑽孔/鎖螺絲位置可能碰到隱藏電線，應握持絕緣手把區域。加工件應確實固定，不要只用手扶著。鑽孔前建議用偵測器確認牆內無隱藏管線/電線，避免鑽破水管或電線。電鑽完全停止前不要放下。鑽頭若卡住，立即放開開關，並提防高扭力反彈。",
+      "source_ref": "[official_manual] 博世原廠說明手冊 GSR|GSB 185-LI 安全指示章節",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "drill-0005",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "常見問題",
+      "content": "Q: 電鑽突然沒力/轉速變慢？ A: 這是溫度過載保護啟動，過熱或超載時速度會自動降低，待恢復正常溫度才會回到全速，不是故障。 Q: LED 燈一直閃？ A: 操作中閃 3 下代表電量偏低，建議充電；靜止時閃 3 下代表過熱保護啟動。 Q: 鑽頭裝不進去/夾頭轉不動？ A: 需確認電源開關未被按下（此時主軸鎖定），才能轉動夾頭裝卸鑽頭。",
+      "source_ref": "[inferred] 依官方手冊機制推導，非社區用戶實際回饋",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "drill-0006",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "使用情境標籤",
+      "content": "適用情境：釘層板、掛畫、組裝家具、鎖螺絲、一般鑽孔、壁掛物品安裝、磚牆/水泥震動鑽孔。",
+      "use_case_tags": [
+        "釘層板",
+        "掛畫",
+        "組裝家具",
+        "鎖螺絲",
+        "鑽孔",
+        "壁掛",
+        "磚牆鑽孔",
+        "水泥鑽孔",
+        "修繕",
+        "居家修繕"
+      ],
+      "source_ref": "[official_manual] 依博世原廠說明手冊「Intended use」章節換句話說：本工具用於鎖螺絲及木材/金屬/陶瓷/塑膠鑽孔，GSB款另可磚牆/水泥震動鑽孔",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "ladder-0001",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "規格",
+      "content": "6 階 A 字梯，鋁合金材質。最大承載量與收合尺寸請借用人自行核對梯身銘牌貼紙（通常貼於梯腳或踏板側邊），不同批次/供應商可能不同，平台不代為保證數字。",
+      "source_ref": "[unverified_series] 無特定品牌型號，通用規格；承重數字未經查證，故留白由使用者核對",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "ladder-0002",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "操作手冊",
+      "content": "展開時兩梯腳需完全張開並扣牢繫材（中間金屬連桿），角度不應超過 75 度。只能踩踏板部分，最頂端那塊平板不可站人。收折前確認無人在梯上，雙手扶穩梯身兩側同時收折，避免手指夾入關節處。",
+      "source_ref": "[regulation] 依職業安全衛生設施規則第 230 條 + 勞安所合梯操作規範推導",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "ladder-0003",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "安全警語",
+      "content": "借用前請務必核對梯身銘牌上的最大承載重量，超重使用有倒塌風險，平台無法逐一確認每把梯子的實際承重標示。依職業安全衛生設施規則第 230 條：合梯應堅固構造，梯腳與地面角度應在 75 度以內，兩梯腳間需以硬質繫材扣牢，不得站立於頂板作業。上下梯時建議穿防滑鞋，手腳保持三點以上同時接觸梯面，禁止手持工具或物料攀爬。梯上有人時不得移動梯子；不得多把梯子疊高使用。鋁梯導電，不適合用於可能接觸電線的作業環境。",
+      "source_ref": "[regulation] 職業安全衛生設施規則第 230 條 + 勞動部/勞安所 (IOSH) 合梯移動梯安全資料表",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "ladder-0004",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "常見問題",
+      "content": "Q: 可以站在最上面那塊板嗎？ A: 不行，法規規定合梯頂板不可站人，重心過高易失衡。 Q: 這把梯子最多可以承重多少？ A: 請查看梯身側邊的銘牌貼紙，上面會標示最大承載量，借用前務必確認是否符合你的體重+攜帶物品重量。 Q: 展開後晃晃的正常嗎？ A: 不正常，請檢查繫材是否扣牢、腳座防滑墊是否磨損，持續晃動請回報異常勿繼續使用。",
+      "source_ref": "[regulation] 依官方法規推導",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "ladder-0005",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "使用情境標籤",
+      "content": "適用情境：換高處燈泡、清潔高處(冷氣頂部、櫃子頂端)、拿取高處物品、油漆天花板、懸掛裝飾物。",
+      "use_case_tags": [
+        "換燈泡",
+        "高處",
+        "搆不到",
+        "清潔天花板",
+        "油漆",
+        "拿高處物品",
+        "登高",
+        "修繕"
+      ],
+      "source_ref": "[inferred] 通用登高工具用途推導，非特定品牌官方文件",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0001",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "規格",
+      "content": "電壓 120V，頻率 50-60Hz，最大壓力 1700 psi，最大出水量 360 l/h，清潔效率 25 m²/h，進水溫度上限 40°C，額定功率 1450W，電源線長度 5 公尺，尺寸(長×寬×高) 297×281×677mm，不含配件重量 4.4kg。",
+      "source_ref": "[official_manual] 凱馳台灣官網產品頁 kaercher.com/tw",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0002",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "套裝內容",
+      "content": "主機、G 120 Power Control 噴槍、可調式噴桿(Vario Power)、高低壓可調噴桿、螺旋噴桿(Dirt Blaster，限頑固污垢)、高壓管 6m、園藝用水管轉接器(3/4吋)、清潔劑桶(可拆)、內建進水過濾網。",
+      "source_ref": "[official_manual] 凱馳台灣官網產品頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0003",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "操作手冊",
+      "content": "噴桿裝上噴槍後轉 90 度鎖定。啟動順序：開啟電源開關(I/ON) → 解除噴槍安全鎖 → 按下扳機才會出水。壓力段位切換(轉動 Vario Power 噴桿)：HARD(強力)用於石材露台、洗石子、柏油、金屬表面、園藝工具；MEDIUM(中)用於汽機車、磚牆、水泥牆面、塑膠家具；SOFT(弱)用於木質表面、腳踏車、砂岩、藤製家具；MIX 搭配清潔劑使用。清潔劑使用時噴桿轉到 MIX，噴灑在乾燥表面稍微靜置(勿讓其乾掉)後再用高壓水柱沖洗，用完清潔劑後需用清水沖洗機身約 30 秒。暫停使用放開扳機即停止出水但系統內仍有殘壓，鎖上安全鎖即可，暫停超過 5 分鐘建議直接關閉電源。結束使用：放開扳機 → 關閉水龍頭 → 按住扳機 30 秒洩壓 → 鎖上安全鎖 → 拔除水管 → 關閉電源 → 拔插頭。",
+      "source_ref": "[official_manual] Kärcher K 3 Power Control 官方操作手冊 (59785800, 02/22)",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0004",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "安全警語",
+      "content": "絕對禁止將水柱噴向人、動物、電器設備或機體本身，也不可對自己或他人噴水清潔衣物或鞋子。使用時務必配戴合格護目鏡，噴槍會有反作用力，請雙手握持。插頭/手部潮濕時勿觸碰插頭；所有電源連接處需保持乾燥且離地。電源線若有損傷絕對不可使用，需請授權人員更換。僅能使用冷水，不可用於噴灑可燃液體、酸鹼、溶劑等。清洗油漆面時噴嘴應保持至少 30 公分距離；螺旋噴桿不可用於輪胎、烤漆面或木頭等脆弱表面。維修、清潔或拆卸零件前，務必先關機、拔插頭並洩壓。",
+      "source_ref": "[official_manual] Kärcher K 3 Power Control 官方操作手冊安全指示章節",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0005",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "常見問題",
+      "content": "Q: 開機沒反應/沒有出水？ A: 需先按下噴槍扳機才會啟動；確認電源插座供電正常，檢查電源線有無破損。 Q: 壓力上不來？ A: 先確認水龍頭是否全開、水量是否足夠；檢查進水口濾網是否阻塞需拆下清洗；機器內若有空氣，可先不裝噴桿開機 2 分鐘排氣，直到出水無氣泡後再裝回噴桿。 Q: 出水壓力忽大忽小？ A: 用細針清除噴嘴孔內的髒污，並從噴嘴前端沖水清潔；同時確認進水量是否足夠。 Q: 加了清潔劑但吸不上來？ A: 確認噴桿是否轉到 MIX 位置；清洗清潔劑吸管上的濾網；檢查吸管是否打結彎折。 Q: 機身有點滲水正常嗎？ A: 輕微滲水屬正常技術現象；若滲水明顯應回報異常停止使用。",
+      "source_ref": "[official_manual] Kärcher K 3 Power Control 官方操作手冊故障排除章節",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "pressurewasher-0006",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "使用情境標籤",
+      "content": "適用情境：清洗陽台/地板、清洗機車/腳踏車、清洗庭院家具、清洗外牆、除青苔、清洗園藝工具。",
+      "use_case_tags": [
+        "洗地板",
+        "洗陽台",
+        "洗機車",
+        "洗腳踏車",
+        "除青苔",
+        "洗牆面",
+        "清潔",
+        "洗庭院家具"
+      ],
+      "source_ref": "[official_manual] 依原廠說明手冊「Intended use」章節：清洗機械、車輛、建物外牆、露台、園藝工具",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0001",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "規格",
+      "content": "型號 N1S infinity，主機尺寸 24.1×20.3×23.6cm，重量 4.5kg，亮度 2450 ISO流明，光源 RGB三色雷射，色域 110% BT.2020，動態對比度 550000:1，靜態對比度 1600:1，投影角度 135度，投影尺寸 40-180吋，投射比 1.2，電壓 100-240V，瓦數 100W，輸入延遲 17ms，噪音 26dB。輸入源：USB×1、HDMI×1、HDMI(ARC)×1、Audio 3.5mm×1；系統 Google TV；RAM 2G+ROM 32G。",
+      "source_ref": "[official_manual] PChome 24h購物商品頁規格說明",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0002",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "套裝內容",
+      "content": "包裝內容物：EPP 環保收納盒、投影主機、專用遙控器、繁體使用說明書、電線、變壓器、快速操作指南。BSMI 許可字號：R3C975；NCC 許可字號：CI3C4069750162。",
+      "source_ref": "[official_manual] PChome 24h購物商品頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0003",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "操作手冊",
+      "content": "利用 135 度垂直懸停 + 360 度水平旋轉一體式雲台調整投影方向，再啟用自動對焦與自動梯形校正，系統會自動即時校正畫面。訊源切換：遙控器或選單切換 HDMI / HDMI(ARC) / USB 訊源，或直接使用內建 Google TV 開啟 Netflix、YouTube 等 App。收納時使用附贈 EPP 環保收納盒，一手提即可攜帶移動。",
+      "source_ref": "[official_manual] PChome 24h購物商品頁 + 台灣總代理安德國際商品說明",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0004",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "安全警語",
+      "content": "本產品內含雷射模組。依 JMGO 同系列產品(N1S Ultimate、N1S Nano)官方說明書標示屬 RG2 風險等級(IEC 62471-5:2015)——如同任何高亮度光源，勿直視鏡頭光束，有孩童在場時尤其留意。此條目引用自同系列其他型號官方文件，非 Infinity 專屬 PDF 逐字確認，若使用者能提供該台官方說明書截圖可進一步精確化。勿自行拆解或改裝雷射模組。務必使用原廠變壓器與電源線。移動或收納時留意機身散熱降溫，避免燙傷。擺放時避免鏡頭遭外物阻擋或雲台角度過度扭轉。",
+      "source_ref": "[unverified_series] 引用 JMGO 同系列(N1S Ultimate/Nano)官方說明書之雷射安全等級標示，非 Infinity 型號專屬文件確認",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0005",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "常見問題",
+      "content": "Q: 畫面歪斜怎麼辦？ A: 使用自動梯形校正功能，系統會即時偵測牆面角度自動校正。 Q: 可以在白天/開燈環境使用嗎？ A: 可以，亮度達 2450 ISO 流明，但畫質仍會比全暗環境略受影響。 Q: 找不到訊源怎麼辦？ A: 用遙控器切換輸入源，或直接從 Google TV 主畫面選擇串流 App。",
+      "source_ref": "[inferred] 依產品規格推導",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "projector-0006",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "使用情境標籤",
+      "content": "適用情境：朋友聚會看電影/追劇、看球賽轉播、家庭劇院觀影、遊戲大螢幕體驗。",
+      "use_case_tags": [
+        "看電影",
+        "追劇",
+        "看比賽",
+        "聚會",
+        "家庭劇院",
+        "投影",
+        "大螢幕",
+        "遊戲"
+      ],
+      "source_ref": "[inferred] 依產品類別(家庭劇院投影機)通用用途推導",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0001",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "規格",
+      "content": "重量約 16.5kg（含頂布 17.5kg）；收納尺寸 76×32×35cm；搭設尺寸 620×360×高210cm；內帳尺寸 360(270)×220×高180cm。材質：本體頂部/壁面 75D 滌塔夫，遮光PU塗層，最低耐水壓 1,800mm，撥水+抗UV加工；雪裙 210D聚酯纖維牛津布，PU塗層，最低耐水壓 450mm；內帳側邊 68D 滌塔夫，底部 210D聚酯纖維牛津布，PU塗層，最低耐水壓 1,800mm；營柱 A6061鋁合金 φ16mm，共5根（脊柱×1、A柱×2、C柱×2）。",
+      "source_ref": "[official_manual] PChome 24h購物商品頁（原廠規格說明）+ [user_review] CJay Tech 開箱心得實測數據",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0002",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "套裝內容",
+      "content": "標配內容：帳篷本體、懸掛式內帳（可拆卸）、18支標準鋁營釘。頂布（遮陽降溫用）需另外加購，非標配。可另購配件：TP-080 延伸前庭營柱組（190cm營柱一對配營繩與營釘）、TP-259-1 專用地墊與地布組、TP-259-2 專用頂布、R-102/R-402 營釘升級款（鍛造鐵營釘/雙勾碳鋼營釘）。",
+      "source_ref": "[official_manual] PChome 24h購物商品頁",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0003",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "操作手冊",
+      "content": "本帳篷為傳統營柱搭建的隧道帳，非彈開式帳篷。營柱結構：脊柱×1、A柱×2、C柱×2，共5根鋁合金營柱（φ16mm）。自立搭建：只需3根營柱即可讓帳篷自立，無風環境下一人即可完成主體搭建；前後對稱式隧道結構，外帳沒有方向之分，降低搭錯方向的機率。搭建時間：實測一人約20-30分鐘，兩人合作可再減半。內帳為懸掛式，搭上主框架內側掛點即可，入口為一般拉鍊設計（無倒T字型拉鏈）。頂布需另外加購，有魔鬼氈可固定在營柱上，安裝方便。帳篷前後門都可以撐起做成前庭遮陽空間（若加購TP-080營柱組可延伸更大前庭）。雪裙固定：四周雪裙需完全貼地並用營釘固定（標配18支），才能有效阻擋冬季冷風與雨水從底部滲入。",
+      "source_ref": "[user_review] CJay Tech 實際開箱搭建心得（非原廠逐字手冊，為真實操作經驗分享）",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0004",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "安全警語",
+      "content": "帳篷搭設面積達 6×3.6 公尺，應確保營釘/營繩固定確實，尤其雪裙部分要貼地壓穩，避免強風掀動整頂帳篷。帳篷布料為PU塗層材質，勿在帳內使用明火（蠟燭、瓦斯爐具），密閉空間烹煮有一氧化碳中毒風險。拆卸前需確認營柱無殘留張力，避免拆卸瞬間營柱彈開造成夾傷。收納前務必確認帳篷完全乾燥，PU塗層材質潮濕收納容易產生異味、發霉或水解（塗層脫落黏手）。營柱為鋁合金材質，收折時依關節方向操作，勿過度施力折彎。抗風性評價為中等（開箱心得評★★★☆☆），強風環境建議加購營柱升級款或加掛額外營繩補強。",
+      "source_ref": "[inferred] 依產品材質特性與大型帳篷通用安全原則推導；抗風性評價引用自 [user_review] CJay Tech 開箱心得",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0005",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "常見問題",
+      "content": "Q: 一個人搭得起來嗎？ A: 可以，只需3根營柱即可自立，無風環境下一人可完成主體搭建，實測約20-30分鐘。 Q: 需要另外買什麼配件嗎？ A: 頂布（遮陽降溫）需另外加購，強烈建議一定要買；標配18支標準鋁營釘，若風雨較大環境建議加購鍛造鐵營釘或雙勾碳鋼營釘替換。 Q: 睡帳可以放幾張床墊？ A: 可放4張190×65cm的單人充氣床墊，內帳為梯形設計，空間高挑不會有壓迫感，角落仍留有置物空間，兩側也有置物袋。 Q: 這頂帳篷抗風性如何？ A: 開箱心得評價為「良好」等級（★★★☆☆），雪裙設計仍能有效阻擋冷風與雨水從底部滲入。 Q: 不架內帳可以當客廳帳用嗎？ A: 可以，拆下懸掛式內帳後，可作為寬3.5×深6M的客廳帳/遮陽帳，供6-10人使用。",
+      "source_ref": "[official_manual] PChome商品頁 + [user_review] CJay Tech 開箱心得",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "tent-0006",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "使用情境標籤",
+      "content": "適用情境：露營、親子露營、家庭露營、四季露營、客廳帳使用、多人團露、戶外過夜、遮陽、雨天庇護。",
+      "use_case_tags": [
+        "露營",
+        "親子露營",
+        "家庭露營",
+        "四季露營",
+        "客廳帳",
+        "多人團露",
+        "戶外過夜",
+        "遮陽",
+        "雨天庇護",
+        "帳篷"
+      ],
+      "source_ref": "[inferred] 依產品類別與功能特性推導",
+      "last_verified_at": "2026-08-17"
+    },
+    {
+      "chunk_id": "damage-drill-0001",
+      "tool_id": "bosch-gsb185li-30pc",
+      "tool_name": "BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組",
+      "tool_category": "電動工具",
+      "category": "損壞判定標準",
+      "content": "MINOR_DIFF（照片可判定，輕微，賠付比例30%）：外殼表面刮痕、鑽頭輕微磨損但仍可使用。DAMAGE_DETECTED（照片可判定，嚴重，賠付比例100%）：外殼破裂、配件缺失（充電器或鑽頭遺失）、電線外露。範圍外（照片判定不到，不納入賠償池，走人工爭議協商）：馬達是否還能啟動、電池是否還能正常充放電——此類功能性故障需借用方/提供者雙方另行協商，非本AI比對機制覆蓋範圍。",
+      "source_ref": "[inferred] 依團隊賠償池機制設計討論訂定，非原廠文件",
+      "last_verified_at": "2026-08-19"
+    },
+    {
+      "chunk_id": "damage-ladder-0001",
+      "tool_id": "generic-aframe-ladder-6step",
+      "tool_name": "加厚鋁合金 A 字摺疊梯(6階)",
+      "tool_category": "梯子/工作梯",
+      "category": "損壞判定標準",
+      "content": "MINOR_DIFF（照片可判定，輕微，賠付比例30%）：表面刮痕、輕微生鏽。DAMAGE_DETECTED（照片可判定，嚴重，賠付比例100%）：踏階變形或斷裂、防滑墊脫落。範圍外（照片判定不到，不納入賠償池，走人工爭議協商）：鉸鏈是否還能穩固鎖定，需實際展開測試才能判定，非本AI比對機制覆蓋範圍。",
+      "source_ref": "[inferred] 依團隊賠償池機制設計討論訂定，非原廠文件",
+      "last_verified_at": "2026-08-19"
+    },
+    {
+      "chunk_id": "damage-pressurewasher-0001",
+      "tool_id": "karcher-k3-power-control",
+      "tool_name": "Kärcher K 3 Power Control 高壓清洗機",
+      "tool_category": "高壓清洗機",
+      "category": "損壞判定標準",
+      "content": "MINOR_DIFF（照片可判定，輕微，賠付比例30%）：外殼刮痕、噴頭輕微變色。DAMAGE_DETECTED（照片可判定，嚴重，賠付比例100%）：軟管破裂、外殼裂損。範圍外（照片判定不到，不納入賠償池，走人工爭議協商）：馬達是否還能啟動、水壓是否正常，需實際通電測試才能判定，非本AI比對機制覆蓋範圍。",
+      "source_ref": "[inferred] 依團隊賠償池機制設計討論訂定，非原廠文件",
+      "last_verified_at": "2026-08-19"
+    },
+    {
+      "chunk_id": "damage-projector-0001",
+      "tool_id": "jmgo-n1s-infinity-4k",
+      "tool_name": "JMGO N1S Infinity 4K目氪三色雷射投影機",
+      "tool_category": "投影機/視聽器材",
+      "category": "損壞判定標準",
+      "content": "MINOR_DIFF（照片可判定，輕微，賠付比例30%）：外殼刮痕、遙控器電池蓋鬆脫。DAMAGE_DETECTED（照片可判定，嚴重，賠付比例100%）：鏡頭破裂或明顯刮傷、外殼變形。範圍外（照片判定不到，不納入賠償池，走人工爭議協商）：開機後畫面是否正常、燈泡是否故障，需實際開機測試才能判定，非本AI比對機制覆蓋範圍。",
+      "source_ref": "[inferred] 依團隊賠償池機制設計討論訂定，非原廠文件",
+      "last_verified_at": "2026-08-19"
+    },
+    {
+      "chunk_id": "damage-tent-0001",
+      "tool_id": "snowpeak-landnest-tp259",
+      "tool_name": "Snow Peak Land Nest 別墅帳 四人家庭隧道帳 TP-259",
+      "tool_category": "露營帳篷",
+      "category": "損壞判定標準",
+      "content": "MINOR_DIFF（照片可判定，輕微，賠付比例30%）：帳布輕微髒污、營釘缺1-2支。DAMAGE_DETECTED（照片可判定，嚴重，賠付比例100%）：帳布破裂、骨架斷裂、拉鍊損壞無法閉合。範圍外（照片判定不到，不納入賠償池，走人工爭議協商）：防水層是否失效，需實際下雨測試才能判定，實務上不可行，非本AI比對機制覆蓋範圍。",
+      "source_ref": "[inferred] 依團隊賠償池機制設計討論訂定，非原廠文件",
+      "last_verified_at": "2026-08-19"
+    }
+  ]
+}
