@@ -33,14 +33,82 @@ def verify_otp(request: OTPVerifyRequest, db: Session = Depends(get_db)):
             phone=request.phone,
             name=f"住戶_{request.phone[-4:]}",
             verification_status=VerificationStatus.PENDING,
+            community_id=1,
             credit_score=80,
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        # 確保已登入住戶具備社區綁定，支援正常使用
+        if not user.community_id:
+            user.community_id = 1
+            db.commit()
+            db.refresh(user)
 
     token = AuthService.create_access_token(user.id, user.community_id)
 
+    return TokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse.model_validate(user),
+    )
+
+
+@router.post("/demo-token", response_model=TokenResponse, summary="取得示範住戶快速登入 Token (開發與展示用途)")
+def get_demo_token(role: str = "renter", db: Session = Depends(get_db)):
+    """
+    為展示與測試用途直接發行示範住戶 JWT Bearer Token。
+    - role='renter': 借用人小琳 (User 102, 信用分 90, VALIDATED)
+    - role='lender': 出借人老陳 (User 101, 信用分 96, VALIDATED)
+    - role='pending': 待審住戶阿強 (User 103, 信用分 80, PENDING)
+    """
+    if role == "lender":
+        user_id = 101
+        phone = "0911000101"
+        name = "出借人老陳"
+        status = VerificationStatus.VALIDATED
+        credit = 96
+    elif role == "pending":
+        user_id = 103
+        phone = "0933000103"
+        name = "待審住戶阿強"
+        status = VerificationStatus.PENDING
+        credit = 80
+    else:
+        user_id = 102
+        phone = "0922000102"
+        name = "借用人小琳"
+        status = VerificationStatus.VALIDATED
+        credit = 90
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        user = User(
+            id=user_id,
+            phone=phone,
+            name=name,
+            verification_status=status,
+            community_id=1,
+            credit_score=credit,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        # 確保示範帳號狀態與身分與請求角色完全吻合
+        changed = False
+        if user.verification_status != status:
+            user.verification_status = status
+            changed = True
+        if not user.community_id:
+            user.community_id = 1
+            changed = True
+        if changed:
+            db.commit()
+            db.refresh(user)
+
+    token = AuthService.create_access_token(user.id, user.community_id)
     return TokenResponse(
         access_token=token,
         token_type="bearer",

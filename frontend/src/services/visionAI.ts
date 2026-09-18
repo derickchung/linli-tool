@@ -141,9 +141,20 @@ class VisionAIService {
     const formData = new FormData();
 
     if (typeof fileOrBase64 === 'string') {
-      formData.append('filename_hint', fileOrBase64);
+      if (fileOrBase64.startsWith('data:')) {
+        try {
+          const res = await fetch(fileOrBase64);
+          const blob = await res.blob();
+          formData.append('file', blob, 'tool_photo.jpg');
+        } catch {
+          formData.append('filename_hint', 'tool_photo.jpg');
+        }
+      } else {
+        formData.append('filename_hint', fileOrBase64);
+      }
     } else {
-      formData.append('file', fileOrBase64, 'tool_photo.jpg');
+      const compressed = await compressAndResizeImage(fileOrBase64);
+      formData.append('file', compressed.blob, (fileOrBase64 as File).name || 'tool_photo.jpg');
     }
 
     try {
@@ -204,13 +215,52 @@ class VisionAIService {
           suggested_accessories: ['外帳本體', '內帳本體', '主營柱 x2', 'A營柱 x2', '原廠營釘 x14', '營繩組'],
           safety_warning: '瓦斯爐具與炭火嚴禁在密閉帳篷內使用以防一氧化碳中毒，歸還前請曬乾帳布並清除泥沙。',
         };
-      } else {
+      } else if (hLower.includes('dewalt') || hLower.includes('得偉')) {
+        return {
+          suggested_name: 'DeWalt 得偉 DCD796 20V MAX無碳刷雙速衝擊震動電鑽',
+          category: 'POWER_TOOLS',
+          is_recognized: true,
+          damage_tool_id_match: 'TOOL_DRILL_01',
+          suggested_accessories: ['得偉電鑽主機', '20V MAX 5.0Ah XR鋰電池', '黃黑原廠座充', '雙頭螺絲批頭', '皮帶掛扣'],
+          safety_warning: '得偉無碳刷大扭力輸出，鑽孔遇到鋼筋卡死時可能產生反扭力，請務必站穩重心並使用低速檔試鑽。',
+        };
+      } else if (hLower.includes('makita') || hLower.includes('牧田')) {
+        return {
+          suggested_name: 'Makita 牧田 DHP482 18V無刷充電式雙速震動電鑽',
+          category: 'POWER_TOOLS',
+          is_recognized: true,
+          damage_tool_id_match: 'TOOL_DRILL_01',
+          suggested_accessories: ['牧田電鑽主機', '18V 5.0Ah 鋰電池', '原廠充電器', '側柄', '深度桿'],
+          safety_warning: '操作牧田震動電鑽請配戴護目鏡與耳塞，切換震動模式鑽水泥孔時請雙手握持側柄穩定機身。',
+        };
+      } else if (hLower.includes('milwaukee') || hLower.includes('美沃奇')) {
+        return {
+          suggested_name: 'Milwaukee 美沃奇 M18 FUEL 18V無碳刷衝擊電鑽 (2804-20)',
+          category: 'POWER_TOOLS',
+          is_recognized: true,
+          damage_tool_id_match: 'TOOL_DRILL_01',
+          suggested_accessories: ['美沃奇電鑽主機', 'M18 REDLITHIUM 5.0Ah 電池', '快速充電器', '原廠重型側手柄', '工具收納提箱'],
+          safety_warning: '美沃奇 M18 FUEL 具備強大扭力 (135Nm)，高負載作業請務必加裝原廠重型側手柄並配戴抗震手套。',
+        };
+      } else if (hLower.includes('bosch') || hLower.includes('博世')) {
         return {
           suggested_name: 'BOSCH GSB 185-LI 18V免碳刷震動電鑽+30件鍍鈦鑽頭組',
           category: 'POWER_TOOLS',
+          is_recognized: true,
           damage_tool_id_match: 'bosch-gsb185li-30pc',
           suggested_accessories: ['電鑽主機', '18V 2.0Ah 鋰電池', '原廠座充', '30件鍍鈦鑽頭組', '原廠手提箱'],
           safety_warning: '磚牆震動鑽孔時請務必配戴防護眼鏡與耳部防護，鑽孔前請使用偵測器確認牆內無暗埋管線。',
+        };
+      } else {
+        // 無法明確判斷，嚴禁預設為 BOSCH！遵循 Fail-Closed 與使用者手動輸入原則
+        return {
+          suggested_name: '',
+          category: 'POWER_TOOLS',
+          is_recognized: false,
+          damage_tool_id_match: undefined,
+          suggested_accessories: ['工具主體'],
+          safety_warning: '無法明確識別工具品牌與型號，已切換為出借人手動輸入模式。請於下方自行填寫工具品名與配件規格。',
+          unrecognized_reason: '無法明確判斷工具品牌與型號，請出借人手動輸入',
         };
       }
     }
@@ -225,38 +275,81 @@ class VisionAIService {
   public async compareCheckout(
     orderId: number,
     checkoutImage: File | Blob | string,
-    notes?: string
+    notes?: string,
+    checkinImage?: string
   ): Promise<CheckOutResponse> {
     let payload: any = {};
+    // 1. 確保歸還照片具有 Base64 二進位字串
     if (typeof checkoutImage === 'string') {
       if (checkoutImage.startsWith('data:') || checkoutImage.length > 500) {
-        payload = {
-          image_base64: checkoutImage,
-          image_url: 'https://storage.linli-tool.app/checkout/custom_upload.jpg',
-          notes: notes || '',
-        };
+        payload.image_base64 = checkoutImage;
+        payload.image_url = 'https://storage.linli-tool.app/checkout/custom_upload.jpg';
+        payload.notes = notes || '';
       } else {
-        payload = {
-          image_url: checkoutImage,
-          notes: notes || '',
-        };
+        payload.image_url = checkoutImage;
+        payload.notes = notes || '';
+        try {
+          const resp = await fetch(checkoutImage);
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const compressed = await compressAndResizeImage(blob);
+            payload.image_base64 = compressed.base64;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch checkoutImage as blob:', e);
+        }
       }
     } else {
       const compressed = await compressAndResizeImage(checkoutImage);
-      payload = {
-        image_base64: compressed.base64,
-        image_url: `https://storage.linli-tool.app/checkout/captured_${Date.now()}.jpg`,
-        notes: notes || (checkoutImage as File).name || '',
-      };
+      payload.image_base64 = compressed.base64;
+      payload.image_url = `https://storage.linli-tool.app/checkout/captured_${Date.now()}.jpg`;
+      payload.notes = notes || (checkoutImage as File).name || '';
+    }
+
+    // 2. 確保取件基準照片亦具有 Base64 二進位字串
+    if (checkinImage) {
+      if (checkinImage.startsWith('data:')) {
+        payload.checkin_image_base64 = checkinImage;
+      } else {
+        payload.checkin_image_url = checkinImage;
+        try {
+          const resp = await fetch(checkinImage);
+          if (resp.ok) {
+            const blob = await resp.blob();
+            const compressed = await compressAndResizeImage(blob);
+            payload.checkin_image_base64 = compressed.base64;
+          }
+        } catch (e) {
+          console.warn('Failed to fetch checkinImage as blob:', e);
+        }
+      }
     }
 
     try {
-      return await api.request<CheckOutResponse>(`/orders/${orderId}/check-out`, {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
+      return await api.orders.checkOut(orderId, payload);
     } catch (err: any) {
-      if (err instanceof ApiError && err.statusCode === 422) {
+      const statusCode = err?.statusCode || (err instanceof ApiError ? err.statusCode : undefined);
+      const detailStr = String(err?.detail || err?.message || '');
+      if (statusCode === 422 || detailStr.includes('INVALID_OBJECT') || detailStr.includes('TOOL_SWAP_DETECTED')) {
+        if (detailStr.includes('INVALID_OBJECT') || detailStr.includes('TOOL_SWAP_DETECTED')) {
+          const isSwap = detailStr.includes('TOOL_SWAP_DETECTED');
+          return {
+            order_id: orderId,
+            status: 'REJECTED_RETAKE',
+            vision_evaluation: {
+              result: isSwap ? 'TOOL_SWAP_DETECTED' : 'INVALID_OBJECT',
+              confidence: 0.98,
+              difference_notes: detailStr.replace(/^.*?([A-Z_]+:\s*)/, '').trim() || (isSwap ? '偵測到同品類跨品牌調包' : '非關生活雜物攔截'),
+              requires_retake: true,
+              ai_model: 'gemini-3.6-flash',
+              token_cost_estimate: 258,
+              recommended_angle: '建議與取件存證照片同為 45 度側面視角，完整露出品牌 LOGO 與機身銘牌，有助降低比對成本。',
+            },
+            deposit_refunded: 0,
+            credit_score_earned: 0,
+            message: isSwap ? '【同類跨品牌調包攔截】' : '【非工具生活雜物攔截】',
+          };
+        }
         throw new VisionAIError(
           '相片模糊或特徵不足（信心度低於 60%），請依照相機框引導重新拍攝。',
           'IMAGE_TOO_BLURRY',
@@ -264,7 +357,7 @@ class VisionAIService {
         );
       }
       throw new VisionAIError(
-        err.detail || '歸還相片比對異常，已為您記錄並轉入人工覆核。',
+        err.detail || err.message || '歸還相片比對異常，已為您記錄並轉入人工覆核。',
         'CHECKOUT_DIFF_FAILED',
         '物業值班狸利提醒：系統暫時無法完成自動比對，不用擔心，管理員會在 24 小時內協助確認！'
       );
@@ -298,16 +391,19 @@ class VisionAIService {
   ): Promise<ToolConsistencyResponse> {
     try {
       if (typeof fileOrBlobOrHint === 'string') {
+        const isDataUri = fileOrBlobOrHint.startsWith('data:');
         return await api.items.verifyToolConsistency({
-          filename_hint: fileOrBlobOrHint,
+          image_base64: isDataUri ? fileOrBlobOrHint : undefined,
+          image_url: !isDataUri && (fileOrBlobOrHint.startsWith('http') || fileOrBlobOrHint.startsWith('/')) ? fileOrBlobOrHint : undefined,
+          filename_hint: !isDataUri ? fileOrBlobOrHint : undefined,
           expected_name: expectedName,
           expected_category: expectedCategory,
         });
       } else {
         const compressed = await compressAndResizeImage(fileOrBlobOrHint);
         return await api.items.verifyToolConsistency({
+          image_base64: compressed.base64,
           file: compressed.blob,
-          filename_hint: (fileOrBlobOrHint as File).name,
           expected_name: expectedName,
           expected_category: expectedCategory,
         });
@@ -320,43 +416,19 @@ class VisionAIService {
           expected_tool: expectedName,
           confidence: 0.3,
           requires_retake: true,
-          mismatch_reason: err.detail || '相片特徵不足或模糊，請將工具置於光線充足處重新拍照。',
+          mismatch_reason: err.detail || '相片特徵不足、模糊或為非修繕生活雜物，請將工具置於光線充足處重新拍照。',
           token_cost_estimate: 0,
         };
       }
-      // 平滑降級與關鍵字防呆
-      const hint = typeof fileOrBlobOrHint === 'string'
-        ? fileOrBlobOrHint
-        : (fileOrBlobOrHint as File).name || '';
-      const hLower = hint.toLowerCase();
-      const expLower = expectedName.toLowerCase();
-
-      const isExpDrill = expLower.includes('電鑽') || expLower.includes('drill');
-      const isExpLadder = expLower.includes('梯') || expLower.includes('ladder');
-
-      const photoIsLadder = hLower.includes('ladder') || hLower.includes('梯');
-      const photoIsDrill = hLower.includes('drill') || hLower.includes('電鑽');
-
-      if ((isExpDrill && photoIsLadder) || (isExpLadder && photoIsDrill)) {
-        return {
-          is_consistent: false,
-          detected_tool: photoIsLadder ? '加厚鋁合金梯' : 'BOSCH 震動電鑽',
-          expected_tool: expectedName,
-          confidence: 0.95,
-          requires_retake: true,
-          mismatch_reason: `相片辨識為【${photoIsLadder ? '加厚鋁合金梯' : 'BOSCH 震動電鑽'}】，與您選擇的品項【${expectedName}】不符！`,
-          token_cost_estimate: 258,
-        };
-      }
-
+      // 嚴格遵守 Fail-Closed 原則：不可在未確認情況下判定為吻合
       return {
-        is_consistent: true,
-        detected_tool: expectedName,
+        is_consistent: false,
+        detected_tool: '待審核/通道異常',
         expected_tool: expectedName,
-        confidence: 0.94,
-        requires_retake: false,
-        mismatch_reason: null,
-        token_cost_estimate: 258,
+        confidence: 0.0,
+        requires_retake: true,
+        mismatch_reason: 'AI 服務連線異常，為確保物件真實性，請重新拍照或聯繫管理員核對。',
+        token_cost_estimate: 0,
       };
     }
   }
@@ -370,77 +442,50 @@ class VisionAIService {
     originalListingPhoto: string,
     itemName = '工具'
   ): Promise<SameObjectVerifyResponse> {
-    const checkinHint = typeof checkinPhoto === 'string' ? checkinPhoto : (checkinPhoto as File).name || '';
-    const chLower = checkinHint.toLowerCase();
-    const origLower = originalListingPhoto.toLowerCase();
-    const expItemLower = itemName.toLowerCase();
-
-    // 關卡 1：非工具生活雜物前端防呆快篩 (馬克杯、咖啡、生活雜物)
-    if (['mug', 'cup', 'coffee', '馬克杯', '咖啡', 'unrelated', '無關', '雜物', 'desk', '生活'].some((w) => chLower.includes(w))) {
-      return {
-        is_same_object: false,
-        confidence: 0.98,
-        difference_notes: '【非工具生活雜物】現場取件相片辨識為生活物品（馬克杯/非修繕工具），並非登記出租之修繕工具。系統已阻擋取件推進，請拍攝實際工具物件！',
-        requires_retake: true,
-        token_cost_estimate: 258,
-        recommended_angle: '建議將鏡頭對準借用的工具主體，拍攝 45 度側面特寫露出品牌銘牌，降低比對成本。',
-      };
-    }
-
-    // 關卡 2：同類跨品牌調包前端防呆快篩 (如原借 Bosch，現場拍成 Makita / DeWalt / Milwaukee)
-    const isOrigBosch = origLower.includes('bosch') || expItemLower.includes('bosch') || expItemLower.includes('博世');
-    const isCheckinOtherBrand = ['makita', 'dewalt', 'milwaukee', '牧田', '得偉', '美沃奇'].some((b) => chLower.includes(b));
-    if (isOrigBosch && isCheckinOtherBrand) {
-      return {
-        is_same_object: false,
-        confidence: 0.96,
-        difference_notes: '【同類跨品牌調包攔截】原始登記為「BOSCH 電鑽」，現場取件相片辨識為其他品牌（如牧田 Makita）。品牌銘牌不符，非原借出之同一實體物件！請核對後重新拍照。',
-        requires_retake: true,
-        token_cost_estimate: 258,
-        recommended_angle: '請拍攝原本借出之 BOSCH 電鑽，保持 45 度側面露出銘牌，避免產生爭議。',
-      };
-    }
-
-    // 關卡 3：品項大類相悖 (電鑽 vs 梯子)
-    const isListingLadder = origLower.includes('ladder') || origLower.includes('梯') || expItemLower.includes('梯');
-    const isListingDrill = origLower.includes('drill') || origLower.includes('電鑽') || expItemLower.includes('電鑽');
-
-    const isCheckinLadder = chLower.includes('ladder') || chLower.includes('梯');
-    const isCheckinDrill = chLower.includes('drill') || chLower.includes('電鑽');
-
-    if ((isListingDrill && isCheckinLadder) || (isListingLadder && isCheckinDrill)) {
-      return {
-        is_same_object: false,
-        confidence: 0.96,
-        difference_notes: `【物件嚴重不符】現場取件相片（${isCheckinLadder ? '加厚折疊梯' : '震動電鑽'}）與原始上架裝備（${isListingLadder ? '折疊梯' : '震動電鑽'}）特徵完全相悖！疑似拿錯裝備或物件遭替換。`,
-        requires_retake: true,
-        token_cost_estimate: 258,
-        recommended_angle: '請確認借用品項並重新拍攝正確裝備。',
-      };
-    }
-
-    // 關卡 4：向後端 AI Gateway 發送比對請求
+    // 依據架構規範：嚴禁依檔名猜測攔截，全面以真實影像內容直通後端 AI Gateway
     try {
+      let checkinBase64 = '';
       if (typeof checkinPhoto === 'string') {
-        return await api.items.verifySameObject({
-          image_url:
-            (checkinPhoto.startsWith('http') || checkinPhoto.startsWith('/')) && !checkinPhoto.startsWith('data:')
-              ? checkinPhoto
-              : undefined,
-          image_base64: checkinPhoto.startsWith('data:') ? checkinPhoto : undefined,
-          filename_hint: checkinHint,
-          original_image_url: originalListingPhoto,
-          item_name: itemName,
-        });
+        if (checkinPhoto.startsWith('data:')) {
+          checkinBase64 = checkinPhoto;
+        } else if (checkinPhoto.startsWith('http') || checkinPhoto.startsWith('/')) {
+          try {
+            const resp = await fetch(checkinPhoto);
+            const blob = await resp.blob();
+            const comp = await compressAndResizeImage(blob);
+            checkinBase64 = comp.base64;
+          } catch {
+            checkinBase64 = '';
+          }
+        }
       } else {
         const compressed = await compressAndResizeImage(checkinPhoto);
-        return await api.items.verifySameObject({
-          file: compressed.blob,
-          filename_hint: (checkinPhoto as File).name,
-          original_image_url: originalListingPhoto,
-          item_name: itemName,
-        });
+        checkinBase64 = compressed.base64;
       }
+
+      let origBase64 = '';
+      if (originalListingPhoto) {
+        if (originalListingPhoto.startsWith('data:')) {
+          origBase64 = originalListingPhoto;
+        } else if (originalListingPhoto.startsWith('http') || originalListingPhoto.startsWith('/')) {
+          try {
+            const resp = await fetch(originalListingPhoto);
+            const blob = await resp.blob();
+            const comp = await compressAndResizeImage(blob);
+            origBase64 = comp.base64;
+          } catch {
+            origBase64 = '';
+          }
+        }
+      }
+
+      return await api.items.verifySameObject({
+        image_base64: checkinBase64 || undefined,
+        image_url: typeof checkinPhoto === 'string' && !checkinPhoto.startsWith('data:') ? checkinPhoto : undefined,
+        original_image_base64: origBase64 || undefined,
+        original_image_url: originalListingPhoto,
+        item_name: itemName,
+      });
     } catch (err: any) {
       if (err instanceof ApiError && err.statusCode === 422) {
         return {
@@ -452,14 +497,14 @@ class VisionAIService {
           recommended_angle: '請將工具置於光線充足處，保持 45 度側面視角。',
         };
       }
-      // 平滑降級合格回應
+      // 嚴格遵守 Fail-Closed 原則：異常時絕不放行
       return {
-        is_same_object: true,
-        confidence: 0.96,
-        difference_notes: `現場取件相片與原始上架「${itemName}」機身銘牌、外觀輪廓與型號特徵完全吻合，確認為同一實體物件。`,
-        requires_retake: false,
-        token_cost_estimate: 258,
-        recommended_angle: '拍攝角度與初始取件照片高度一致 (45度側視角)，雙圖特徵核對吻合。',
+        is_same_object: false,
+        confidence: 0.0,
+        difference_notes: '後端 AI 檢核通道連線異常，依 Fail-Closed 門禁原則阻斷取件推進。請檢查網路或由雙方現場核對實物銘牌。',
+        requires_retake: true,
+        token_cost_estimate: 0,
+        recommended_angle: '請保持 45 度側面視角，露出品牌 LOGO 與機身銘牌。',
       };
     }
   }

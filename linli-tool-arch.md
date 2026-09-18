@@ -2,7 +2,7 @@
 
 所屬專案：LinLi Tool 鄰里工具
 基準文件：PROJECT.md v1.2 第 3 節「專案結構」、第 10 節「安全與限制」
-版本：v3.0（補上後端拆分結構、ERD、認證/rate limiting/測試/secrets 方案）
+版本：v3.1（補上狀態機單向推進引擎、Token 成本最佳化管線、Tab 4 多訂單水平工作台與保障池帳本 ERD）
 
 ---
 
@@ -12,23 +12,32 @@
 flowchart LR
     subgraph FE["前端 React App<br/>React 18 + TypeScript + Vite"]
         API["api.ts 資料層<br/>pages/ + components/"]
+        STATE["單向遞增狀態機<br/>STATUS_RANK (防止快取倒退)"]
         D1["visionAI.ts（D1）<br/>影像上架辨識"]
+        CANVAS["Canvas 768px 邊緣壓縮<br/>鎖定 258 Tokens (1 Tile)"]
+        WORK["Tab 4 多訂單水平工作台<br/>手機視窗模擬器 (iPhone 16 Pro)"]
     end
 
     subgraph BE["後端 FastAPI<br/>FastAPI + SQLAlchemy 2.0"]
-        MAIN["main.py API路由<br/>訂單・工具・RAG四端點"]
-        MODELS["models.py・utils.py<br/>資料模型・AI呼叫封裝"]
-        GATEWAY["AI Gateway<br/>統一代理所有 LLM 呼叫"]
+        ROOT["main.py (根目錄 ASGI 封裝)"]
+        MAIN["backend/main.py 路由層<br/>訂單・工具・RAG・驗收端點"]
+        MODELS["models.py・schemas.py<br/>訂單/保障池帳本/工單模型"]
+        PILLOW["Pillow 0-Token 本機防禦<br/>色彩直方圖/模糊度秒判"]
+        GATEWAY["AI Gateway<br/>統一代理所有 LLM/Vision 呼叫"]
     end
 
-    SQLITE[("資料庫<br/>SQLite")]
-    GEMINI["Google Gemini API<br/>RAG A2 情境標籤解析 + D1 影像辨識"]
+    SQLITE[("資料庫<br/>SQLite (訂單/帳本/使用者)")]
+    GEMINI["Google Gemini API<br/>Gemini 2.0 Flash / Vision 多模態"]
 
-    API -->|"REST API"| MAIN
-    D1 -->|"REST API（不再直連外部）"| GATEWAY
+    API -->|"REST API"| ROOT
+    ROOT --> MAIN
+    D1 -->|"REST API"| ROOT
+    CANVAS --> D1
+    STATE -.->|"驅動"| WORK
+    MAIN --> PILLOW
+    PILLOW -->|"合規影像"| GATEWAY
     MAIN --> MODELS
     MODELS --> SQLITE
-    MODELS -->|"utils.py 封裝呼叫"| GATEWAY
     GATEWAY --> GEMINI
 ```
 
@@ -40,18 +49,23 @@ flowchart LR
 
 | 模組 | 對應檔案 | 說明 |
 |---|---|---|
-| 頁面與元件 | `pages/`、`components/` | 22 個畫面 |
-| 資料層 | `services/api.ts` | 呼叫後端 REST API |
-| D1 上架辨識 | `services/visionAI.ts` | 影像辨識前端呼叫點，改走後端 API Gateway，不再直連外部 LLM |
+| 頁面與元件 | `pages/`、`components/` | 22 個畫面；採 Mobile-First 手機模擬器視窗設計（iPhone 16 Pro 居中膠囊容器） |
+| 資料層 | `services/api.ts` | 呼叫後端 REST API，具備寬容容錯降級機制 |
+| 狀態機引擎 | `App.tsx` | 採用 **`STATUS_RANK` 單向遞增矩陣**（`COMPLETED(5) > INSPECTION(4) > IN_USE(3) > PICKED_UP(2) > CONFIRMED(1)`），杜絕舊快取或輪詢導致狀態倒退 |
+| 多訂單工作台 | `App.tsx (Tab 4)` | 借用中多訂單水平滾動切換器，支援社區居民同時借出/借用多項裝備之獨立驗收操作 |
+| 影像壓縮管線 | `components/CameraModal.tsx` | 前端 Canvas 邊緣等比壓縮（最長邊 768px、JPEG 85%），將多模態請求嚴格鎖定於 1 Tile (258 Tokens，節省 93% 頻寬與費用) |
+| D1 上架辨識 | `services/visionAI.ts` | 影像辨識前端呼叫點，改走後端 AI Gateway，不再直連外部 LLM |
 
 ### 後端（FastAPI）
 
 | 模組 | 對應檔案 | 說明 |
 |---|---|---|
-| API 路由 | `main.py` | RAG 四端點、訂單、工具查詢 |
-| 資料模型 | `models.py` / `schemas.py` | Community/User/Item/Order/DisputeTicket 五張核心表 |
-| AI 呼叫封裝 | `utils.py` | 統一封裝 Gemini 呼叫（RAG 情境標籤解析 + D1 影像辨識） |
-| 資料庫 | `database.py` | SQLite |
+| ASGI 根入口 | `main.py` | 專案根目錄 ASGI 入口，無縫封裝 `backend.main:app`，保證跨目錄路徑一致性 |
+| API 路由 | `backend/main.py` | 訂單、工具、RAG、現場動態核銷與驗收端點 |
+| 資料模型 | `models.py` / `schemas.py` | Community/User/Item/Order/DisputeTicket/CompensationLedger 核心模型 |
+| 本機防禦層 | `utils.py` / `ai/` | Pillow 0-Token 本機秒判（過曝、純黑、模糊照片即時攔截，不耗用外部 API Token） |
+| AI 呼叫封裝 | `ai/gateway.py` | 統一封裝 Gemini 呼叫（雙階段門禁：Gate 1 調包/雜物攔截 ➔ Gate 2 差分責任計算） |
+| 資料庫 | `database.py` | SQLite（訂單交易與保障公庫流水紀錄） |
 
 ---
 
@@ -59,7 +73,9 @@ flowchart LR
 
 1. **AI 呼叫入口收斂為 Gemini API**：D1 影像辨識與 RAG 情境標籤解析統一改用 Gemini，兩者都經後端 AI Gateway 代理，金鑰只存後端環境變數，前端不再直連任何外部 LLM。單一供應商也代表 `utils.py` 只需維護一套 client 封裝。
 2. **資料庫維持 SQLite**：不採用 PostgreSQL，維持現有 `database.py` 的 SQLite 方案。
-3. **資料模型關聯明確化**：Community/User/Item/Order/DisputeTicket 的歸屬與關聯定義如下方 ERD。
+3. **資料模型關聯明確化**：Community/User/Item/Order/DisputeTicket/CompensationLedger 的歸屬與關聯定義如下方 ERD。
+4. **全端狀態機單向遞增 (Monotonic Rank Engine)**：禁止以遠端舊狀態覆蓋前端已推進之高階狀態，徹底解決待取件與歸還驗收之跳轉時序問題。
+5. **Token 成本防線 (258 Tokens)**：落實 768px Canvas 邊緣壓縮與 45 度角特寫拍攝規範，極大化單張照片的防調包銘牌與結構特徵資訊密度。
 
 ---
 
@@ -98,9 +114,10 @@ erDiagram
     USER ||--o{ ORDER : "借用人"
     ITEM ||--o{ ORDER : "被借用"
     ORDER ||--o| DISPUTETICKET : "爭議附著於訂單"
+    ORDER ||--o{ COMPENSATION_LEDGER : "保障池出入帳流水"
 ```
 
-假設：Item 掛在 Community 底下（同社群內互借），DisputeTicket 綁定 Order（而非直接綁 Item），因為爭議通常源於一次借還交易。如果實務上也需要「未成立訂單前的物品狀態爭議」，DisputeTicket 需要改成可選擇性綁 Item 或 Order，屆時再調整。
+假設：Item 掛在 Community 底下（同社群內互借），DisputeTicket 綁定 Order（而非直接綁 Item），因為爭議通常源於一次借還交易；CompensationLedger 綁定 Order 記錄每筆 15% 提撥入池與各次責任補貼出帳。
 
 ---
 
@@ -128,3 +145,4 @@ erDiagram
 * v2.0：移除完成度標記，新增優化建議與待決議題，供前後端重新規劃使用
 * v2.1：定案 AI 呼叫全數收斂至 Gemini、資料庫維持 SQLite、採納資料模型 ERD 建議
 * v3.0：執行剩餘優化建議 — 補上後端拆分結構、ERD、認證/rate limiting/測試/secrets 管理方案
+* v3.1：升級前端狀態機單向遞增 (STATUS_RANK)、Canvas 768px/258 Token 成本防線、Tab 4 借用中多訂單工作台與保障池帳本 ERD

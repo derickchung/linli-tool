@@ -1,12 +1,12 @@
 # LinLi Tool（鄰里工具）完整功能規格書 (Functional Specification Document)
 
 - **文件名稱**：LinLi Tool 系統功能規格書
-- **文件版本**：v1.1
+- **文件版本**：v1.2 (納入雙階段驗收門禁、棄單違約矩陣、保障池帳本與免責範圍)
 - **基準文件**：
   - PRD: [linli-tool-prd.md](file:///c:/Users/derick.chung_cycraft/Downloads/AI_PM/project/linli-tool-project/linli-tool-prd.md)
   - 架構設計: [linli-tool-arch.md](file:///c:/Users/derick.chung_cycraft/Downloads/AI_PM/project/linli-tool-project/linli-tool-arch.md)
   - 設計指南: [design_guide.md](file:///c:/Users/derick.chung_cycraft/Downloads/AI_PM/project/linli-tool-project/design_guide.md) (品牌視覺與設計系統指南 v1.0)
-- **更新日期**：2026-09-05
+- **更新日期**：2026-09-16
 - **負責團隊**：LinLi Lab（鄰裡實驗室）
 
 ---
@@ -71,6 +71,7 @@ erDiagram
     USER ||--o{ ORDER : "承租借用 (renter)"
     ITEM ||--o{ ORDER : "租借標的 (item)"
     ORDER ||--o| DISPUTE_TICKET : "產生爭議 (dispute)"
+    ORDER ||--o{ COMPENSATION_LEDGER : "觸發保障金出入帳 (ledgers)"
     COMMUNITY ||--o{ COMMUNITY_INVITATION : "發行邀請 (invitations)"
     USER ||--o{ COMMUNITY_INVITATION : "由居民發起 (inviter)"
 
@@ -108,7 +109,7 @@ erDiagram
         string category "分類 (POWER_TOOLS 等)"
         int daily_rate "每日租金 (TWD)"
         int market_value "購買原價/市值"
-        string damage_tool_id "賠償池示範工具代碼 (可為 null)"
+        string damage_tool_id "示範工具代碼 (可為 null)"
         string status "AVAILABLE / RENTED / MAINTENANCE"
         text accessories_json "配件清單 JSON"
         text safety_notes "安全注意事項"
@@ -134,9 +135,9 @@ erDiagram
         datetime handover_code_expires "核銷碼過期時間"
         string checkin_image_url "取件存證照片"
         string checkout_image_url "歸還存證照片"
-        string vision_result "MATCH / MINOR_DIFF / DAMAGE_DETECTED"
-        int compensation_amount "應賠償總額"
-        int pool_payout "賠償池支出金額"
+        string vision_result "MATCH / MINOR_DIFF / DAMAGE_DETECTED / TOOL_SWAP_DETECTED / INVALID_OBJECT"
+        int compensation_amount "應補償總額"
+        int pool_payout "社區互助保障池支出金額"
         datetime created_at
     }
 
@@ -150,6 +151,16 @@ erDiagram
         text resolution_notes "判決說明"
         datetime created_at
         datetime resolved_at
+    }
+
+    COMPENSATION_LEDGER {
+        int id PK
+        int order_id FK "關聯訂單"
+        string transaction_type "FEE_INFLOW (15%入池) / DAMAGE_PAYOUT (責任補貼支出)"
+        int amount "異動金額"
+        int balance_after "異動後保障池水位"
+        string notes "流水說明"
+        datetime created_at
     }
 ```
 
@@ -542,7 +553,33 @@ class ItemStatus(str, Enum):
   * 主行動按鈕文案強制為：**「發起預約並執行預授權鎖定 (歸還無誤即放行押金)」**。
   * 嚴格禁止出現「立即扣款 NT$ 732」等容易引發借用人恐慌之文案。
 
-### 6.4 資料模型定義
+### 6.4 棄單與取消違約處置機制 (Order Cancellation & Abandonment)
+
+為兼顧社群互助彈性與防範惡意佔用裝備，系統訂定兩大維度之違約處置防線：
+
+#### 1. 未取件爽約處置（取件前）
+* **情境 A（預約後反悔，距離起租 $\ge 24$ 小時）**：
+  - 借用人無條件免費取消。
+  - 系統退回 100% 租金與 100% 押金預授權。
+  - 信用分不變。裝備檔期即刻釋出。
+* **情境 B（臨時取消，距離起租 $< 24$ 小時 或 預約時間抵達後 2 小時未現身）**：
+  - 扣除首日租金之 **20% 作為出租鄰居之檔期準備補償費**（由系統撥付給出租人）。
+  - 退還 80% 租金與 100% 履約押金。
+  - 借用人**信用分扣 15 分**（由 80 降至 65，進入觀察名單，下次租借將喪失押金減免資格）。
+  - 若累積 2 次未取件爽約，該帳號凍結預約權限 14 天。
+
+#### 2. 取件後失聯／侵占處置（借用中）
+* **逾期 24 小時**：系統發送緊急推播與簡訊催還提醒；租金以每日 1.5 倍滯納費率累計。
+* **逾期 48 小時**：啟動社區二等親／邀請人社交擔保連帶照會；凍結該借用人在平台之所有功能。
+* **逾期 72 小時（判定為惡意侵占／棄單不還）**：
+  - 系統正式宣告該訂單違約，狀態切換為 `DISPUTED`。
+  - **100% 沒入借用人預授權押金**（全數撥付給出租人作為設備重置補償金）。
+  - 若借用人原享有免押金，差額由「**社區互助保障公庫**」全額代償出借人（上限為商品殘值），保障池向違約借用人依法追償。
+  - 借用人**信用分歸零並永久停權黑名單**，系統自動生成存證紀錄並寄發存證信函。
+
+---
+
+### 6.5 資料模型定義
 ```python
 class OrderStatus(str, Enum):
     PENDING = "PENDING"               # 建立預約，待付款/預授權
@@ -552,7 +589,7 @@ class OrderStatus(str, Enum):
     INSPECTION = "INSPECTION"         # Check-out 歸還比對中
     COMPLETED = "COMPLETED"           # 順利結案，款項撥付
     CANCELLED = "CANCELLED"           # 已取消
-    DISPUTED = "DISPUTED"             # 進入爭議處理
+    DISPUTED = "DISPUTED"             # 進入爭議處理 / 違約棄單待追償
 
 # SQLAlchemy Table: orders
 # id: Integer, PK
@@ -571,7 +608,7 @@ class OrderStatus(str, Enum):
 # ...
 ```
 
-### 6.5 介面與 API 定義
+### 6.6 介面與 API 定義
 
 #### 1. 預約費用即時試算
 - **Endpoint**: `POST /api/v1/orders/calculate`
@@ -637,16 +674,17 @@ class OrderStatus(str, Enum):
   }
   ```
 
-### 6.6 流程與邊界條件
+### 6.7 流程與邊界條件
 * **防重複預約排他檢查（Concurrency Control）**：建立預約時，Service 層透過資料庫事務隔離或樂觀鎖檢查：
   `WHERE item_id = :item_id AND status IN ('CONFIRMED', 'PICKED_UP', 'IN_USE') AND NOT (end_date < :req_start OR start_date > :req_end)`
   若存在重疊檔期，直接拋出 `409 Conflict`。
 * **借用自己工具限制**：`renter_id == lender_id` 阻擋並回傳 `400 Bad Request`。
 
-### 6.7 驗收標準
+### 6.8 驗收標準
 1. 任何金額（租金、押金、取消手續費、賠償池撥付）必須由後端計算並寫入資料庫，前端不得帶入金額欄位。
-2. 起租前 23 小時 59 分送出取消請求，手續費精準收取 20% 總租金。
-3. 賠償池資金不足時，系統紀錄實際能撥付的上限金額，保證賠償池資料庫總額不為負數。
+2. 起租前 23 小時 59 分送出取消請求，手續費精準收取 20% 總租金，並自借用人信用分扣除 15 分。
+3. 逾期超過 72 小時未還且失聯，系統需能自動將狀態推入 `DISPUTED`、沒入押金並凍結權限。
+4. 賠償池資金不足時，系統紀錄實際能撥付的上限金額，保證賠償池資料庫總額不為負數。
 
 ---
 
@@ -704,23 +742,35 @@ sequenceDiagram
    - 由「AI 相機助手（Vigilant Inspector LiLi）」給出引導：「請將工具置於引導框內，狸利會自動協助遮蔽住宅隱私」。
    - 提供「拍攝並標註初始舊傷，保護您的借用權益」微文案提示，引導拍照標記既有刮痕。
    - 照片上傳時，後端計算 SHA-256 Checksum 存入資料庫，防止日後遭竄改。
-3. **Check-out 影像差分比對規格（AI Gateway 規範）**：
-   - 相機取景介面以 35% 半透明度（`opacity: 0.35`）疊加該訂單之 Check-in 初始存證照片（Ghost Overlay 輪廓），輔助借用人精準以同視角、同距離拍攝。
-   - 後端將兩張存證照片傳送至 Gemini Vision，Prompt 嚴格規範僅比對「結構性損壞、外殼破裂、配件缺損、燒焦痕跡」，**正常使用之表面輕微灰塵、水漬或木屑粉塵應忽略並判定為 MATCH**。
-   - 比對結果分為三級：
-     - `MATCH`：完好或僅有正常耗損。
-     - `MINOR_DIFF`：輕微刮傷磨損但不影響核心功能（按殘值 30% 賠償）。前端介面由狸利溫和提示：「檢測到表面有微幅痕跡 (Diff: 0.18)，是否需補充清潔照或說明？」，嚴禁使用「檢測到損壞，準備扣除押金」等對立性字眼。
-     - `DAMAGE_DETECTED`：結構破裂、冒煙短路、外殼斷裂或缺件（按殘值 100% 賠償）。
-4. **爭議工單（DisputeTicket）處理**：
+3. **雙階段驗收門禁法則 (Two-Stage Inspection Gate)**：
+   - **第一道門禁：輸入有效性與同實體檢核 (Validity & Same-Entity Check)**
+     - **非關物品立即阻斷 (`INVALID_OBJECT`)**：若借用人上傳生活雜物、水杯、文具或無關之非工程修繕物品，後端 AI Gateway 立即在第一時間拒絕，拋出 `HTTP 422 Unprocessable Entity`，前端即刻鎖定結案與押金退還按鈕，杜絕非工具進入差分計算。
+     - **同類跨品牌調包攔截 (`TOOL_SWAP_DETECTED`)**：借出與歸還即使同屬電鑽品類，若品牌銘牌或外觀型號不符（如起租借出 Bosch 原廠電鑽，歸還卻上傳牧田 Makita 或不知名白牌），AI 必須判定為惡意調包並即刻阻斷。
+   - **第二道門禁：差分損壞與責任計算 (Differential Inspection)**
+     - 僅在第一道門禁通過確認為「同一實體物件」後，方進入差分損傷評估：
+       - `MATCH`：完好或僅有正常耗損（全額放行押金，信用分 +2）。
+       - `MINOR_DIFF`：輕微表面刮損不影響結構功能（殘值 30% 責任補貼）。
+       - `DAMAGE_DETECTED`：主機外殼破裂、燒焦冒煙或配件短缺（殘值 100% 責任補貼）。
+4. **45 度側身特寫指引與 Vision Token 成本最佳化 (258 Tokens)**：
+   - **取景指引**：系統各階段引導框與提示微文案中，明確提示：「**請以 45 度側身特寫拍攝，同時露出品牌 LOGO 與夾頭銘牌**」，一張照片同時兼顧防調包與功能結構檢核。
+   - **前端 768px Canvas 邊緣壓縮**：前端上傳前透過 Canvas 進行邊緣等比縮放（最長邊 768px、JPEG 品質 85%），將 Gemini 多模態呼叫嚴格鎖定在 1 個 Tile (258 Tokens)，節省 93% 頻寬與 API 成本。
+   - **後端 Pillow 0-Token 秒判防禦**：後端對過度曝光、全黑、純白或極度模糊之無效照片，以 Pillow 進行直方圖本機秒判，未達門檻直接退件，不打外部 LLM API。
+5. **排除功能性故障免責範圍宣告 (Excluded Scope)**：
+   - **免責範圍**：本系統 AI 影像差分比對**嚴格限定於工具外觀物理完整度、夾頭結構與品牌銘牌**。
+   - **非影像可判定之內部隱疾**（如：馬達內部線圈短路、碳刷自然耗損磨平、高壓清洗機泵浦內漏、鋰電池電芯老化蓄電不良等功能性故障），**明確排除於 AI 影像驗收責任判定範圍之外**。
+   - 該類功能爭議依循線下當面交接試機檢驗，或送交公正第三方工具檢修商判定，平台不因外觀判定結果對內部電機故障承擔擔保責任。
+6. **爭議工單（DisputeTicket）處理**：
    - 出租方或承租方若對 AI 判定不服，可在 24 小時內發起申訴。
    - 爭議成立時，訂單轉為 `DISPUTED`，押金與平台撥款暫時凍結，直到人工後台標記 `RESOLVED`。
 
 ### 7.4 資料模型定義
 ```python
 class VisionDifferenceResult(str, Enum):
-    MATCH = "MATCH"
-    MINOR_DIFF = "MINOR_DIFF"
-    DAMAGE_DETECTED = "DAMAGE_DETECTED"
+    MATCH = "MATCH"                                     # 正常無損／正常耗損
+    MINOR_DIFF = "MINOR_DIFF"                           # 輕微表面磨損
+    DAMAGE_DETECTED = "DAMAGE_DETECTED"                 # 結構性破損
+    TOOL_SWAP_DETECTED = "TOOL_SWAP_DETECTED"           # 調包攔截 (品牌/型號不符)
+    INVALID_OBJECT = "INVALID_OBJECT"                   # 非工具雜物攔截
 
 class DisputeStatus(str, Enum):
     OPEN = "OPEN"

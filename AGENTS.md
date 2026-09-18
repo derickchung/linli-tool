@@ -47,3 +47,18 @@
   - 「保費」➔ **「互助保障金」** 或 **「維護費」**
   - 「理賠」➔ **「責任補貼」** 或 **「損害補償」**
 - 所有 UI 畫面、API 回傳說明、RAG 知識庫與提示詞，均須落實 0 次違規詞檢核。
+
+---
+
+## 五、泛化強健工程規範 (Robust Engineering Invariants - .agents/skills/robust-engineering/)
+
+為杜絕低階運行期錯誤（如 UnboundLocalError、中間層欄位遺落、弱型別逃逸），所有程式碼修改必須嚴格遵守以下 4 項不變量：
+1. **全鏈路契約透傳 (Pipeline Integrity)**：
+   - 跨端傳遞嚴禁手動宣告殘缺的物件字面量逐欄拼裝。前端 `api.ts` 必須使用完整 TypeScript 介面並完整透傳 Request Payload，嚴禁遺漏任何上游欄位。
+2. **強型別邊界 (Schema-First)**：
+   - 後端端點嚴禁使用無型別的 `request.json()` 或裸字典 `body.get()`。必須定義 Pydantic BaseModel，所有可選欄位必須顯式指派預設值（`= None`）。
+3. **防禦性範疇與零未綁定 (Zero-Unbound Scope)**：
+   - Python 函式中凡在 `if/elif/else` 或 `try/except` 內賦值的變數，函式頂層開頭必須顯式完成初始化宣告（如 `var = None`），物理性杜絕 `UnboundLocalError`。
+4. **變更對稱性 (Symmetric Refactoring)**：
+   - 欄位異動必須對稱審查「產生端 ➔ 傳輸層 ➔ 接收層 ➔ 降級測試層」，禁止只改頭尾卻遺漏中間轉發。
+

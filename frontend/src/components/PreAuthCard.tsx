@@ -34,10 +34,10 @@ export const PreAuthCard: React.FC<PreAuthCardProps> = ({
 
   return (
     <div
-      className={`bg-amber-50 border border-amber-200 rounded-2xl p-5 text-diyDark shadow-sm ${className}`}
+      className={`bg-amber-50 border border-amber-200 rounded-2xl p-4 sm:p-5 text-diyDark shadow-sm ${className}`}
       data-testid="pre-auth-card"
     >
-      <div className="flex items-center justify-between pb-3 border-b border-amber-200/80 mb-4">
+      <div className="flex items-center justify-between pb-2.5 border-b border-amber-200/80 mb-3">
         <h3 className="font-black text-lg text-diyDark">金流預授權試算明細</h3>
         {poolCoverageApplicable && (
           <span className="text-[11px] font-bold bg-amber-200/80 text-amber-900 px-2.5 py-0.5 rounded-full">
@@ -84,20 +84,24 @@ export const PreAuthCard: React.FC<PreAuthCardProps> = ({
       </div>
 
       {/* 預授權防慌張微文案提示 */}
-      <div className="bg-white/80 p-3 rounded-xl text-xs text-gray-600 mb-5 border border-amber-100 leading-relaxed">
+      <div className="bg-white/80 p-2.5 sm:p-3 rounded-xl text-xs text-gray-600 mb-3 border border-amber-100 leading-relaxed">
         💡 <strong className="text-gray-800">預授權鎖定說明：</strong>
         系統僅先鎖定信用額度，絕非立即扣款。租期結束且雙方確認工具無損後，押金額度將即刻自動釋出。
       </div>
 
       {/* 主行動按鈕 */}
-      <PrimaryCTAButton
-        fullWidth
-        loading={loading}
-        onClick={onConfirm}
-        data-testid="pre-auth-confirm-button"
-      >
-        發起預約並執行預授權鎖定 (歸還無誤即放行押金)
-      </PrimaryCTAButton>
+      <div className="pt-1">
+        <PrimaryCTAButton
+          fullWidth
+          size="md"
+          loading={loading}
+          onClick={onConfirm}
+          data-testid="pre-auth-confirm-button"
+          className="text-xs sm:text-sm font-extrabold py-3.5 leading-snug"
+        >
+          發起預約並執行預授權鎖定 (歸還無誤即放行押金)
+        </PrimaryCTAButton>
+      </div>
     </div>
   );
 };

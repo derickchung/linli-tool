@@ -96,12 +96,12 @@ def list_items(
     db: Session,
     community_id: int,
     category: Optional[str] = None,
-    status_filter: Optional[str] = "AVAILABLE",
+    status_filter: Optional[str] = None,
     query: Optional[str] = None,
 ) -> Tuple[List[Item], List[str]]:
     q = db.query(Item).filter(Item.community_id == community_id)
 
-    if status_filter:
+    if status_filter and status_filter.upper() != "ALL":
         try:
             status_enum = ItemStatus(status_filter)
             q = q.filter(Item.status == status_enum)

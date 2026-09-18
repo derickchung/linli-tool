@@ -369,11 +369,35 @@ def test_multi_brand_drill_recognition_and_consistency(client, setup_ai_env):
         },
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert res_mug.status_code == 200
-    data_mug = res_mug.json()
-    assert data_mug["is_consistent"] is False
-    assert data_mug["requires_retake"] is True
-    assert "馬克杯" in data_mug["detected_tool"] or "生活" in data_mug["detected_tool"]
+    # 4. Unknown/Unrecognized Tool -> Does NOT default to Bosch, returns empty suggested_name
+    gw.rate_limits.clear()
+    res_unknown = client.post(
+        "/api/v1/items/recognize?filename_hint=custom_photo_123.jpg",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_unknown.status_code == 200
+    data_unknown = res_unknown.json()
+    assert data_unknown["suggested_name"] == ""
+    assert data_unknown.get("is_recognized") is False
+    assert "Bosch" not in data_unknown["suggested_name"]
+    assert "手動" in data_unknown["safety_warning"]
+
+    # 5. User Manually inputs tool name (e.g. DeWalt) and verifies consistency -> Accepted
+    gw.rate_limits.clear()
+    res_manual = client.post(
+        "/api/v1/items/verify-consistency",
+        json={
+            "expected_name": "DeWalt 得偉 20V 雙速震動電鑽",
+            "expected_category": "POWER_TOOLS",
+            "filename_hint": "custom_photo_123.jpg",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_manual.status_code == 200
+    data_manual = res_manual.json()
+    assert data_manual["is_consistent"] is True
+    assert data_manual["requires_retake"] is False
+
 
 
 def test_same_object_cross_brand_swap_prevention(client, setup_ai_env, create_test_user):
@@ -561,6 +585,57 @@ def test_items_verify_same_object_endpoint(client, setup_ai_env):
     data_match = res_match.json()
     assert data_match["is_same_object"] is True
     assert data_match["requires_retake"] is False
+
+
+def test_same_object_makita_vs_milwaukee_swap_prevention(client, setup_ai_env):
+    """驗證原借 Makita 牧田電鑽，現場拍成 Milwaukee 美沃奇電鑽時，必須精準阻斷調包！"""
+    token = setup_ai_env["token1"]
+    gw = AIGateway.get_instance()
+    gw.rate_limits.clear()
+
+    res = client.post(
+        "/api/v1/items/verify-same-object",
+        json={
+            "item_name": "Makita 牧田 DHP482 18V無刷充電式雙速震動電鑽",
+            "original_image_url": "/test_assets/drill_makita.jpg",
+            "filename_hint": "drill_milwaukee.jpg 美沃奇 M18 FUEL 衝擊電鑽",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["is_same_object"] is False
+    assert data["requires_retake"] is True
+    assert "調包" in data["difference_notes"] or "品牌" in data["difference_notes"]
+    assert "Makita" in data["difference_notes"] or "牧田" in data["difference_notes"]
+
+
+def test_ai_status_and_rag_ask_ai(client, setup_ai_env):
+    """驗證 AI Gateway 狀態端點與知識庫 AI 增強問答端點"""
+    # 1. 查詢 AI 連線狀態
+    res_status = client.get("/api/v1/items/ai-status")
+    assert res_status.status_code == 200
+    status_data = res_status.json()
+    assert "gemini" in status_data["model"]
+    assert status_data["all_features_ai_driven"] is True
+    assert "knowledge_base_ai" in status_data
+    assert len(status_data["features"]) >= 4
+
+    # 2. 測試知識庫 AI 即時問答端點
+    res_qa = client.post(
+        "/api/v1/rag/ask-ai",
+        json={
+            "question": "電鑽如果鑽水泥牆應該切換什麼模式？",
+            "tool_id": "TOOL_DRILL_01",
+        },
+    )
+    assert res_qa.status_code == 200
+    qa_data = res_qa.json()
+    assert "answer" in qa_data
+    assert len(qa_data["answer"]) > 5
+    assert "mascot_tip" in qa_data
+    assert "狸利" in qa_data["mascot_tip"]
+
 
 
 

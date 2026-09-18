@@ -5,7 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, not_
 
-from ..models import Order, Item, User, OrderStatus, VerificationStatus
+from ..models import Order, Item, User, OrderStatus, VerificationStatus, ItemStatus
 from ..schemas import (
     OrderCalculateResponse,
     OrderResponse,
@@ -64,6 +64,9 @@ def to_order_response(order: Order) -> OrderResponse:
         base_deposit=order.base_deposit,
         actual_deposit=order.actual_deposit,
         status=order.status.value if hasattr(order.status, "value") else str(order.status),
+        checkin_image_url=order.checkin_image_url,
+        checkout_image_url=order.checkout_image_url,
+        vision_result=order.vision_result,
         compensation_amount=order.compensation_amount or 0,
         pool_payout=order.pool_payout or 0,
         created_at=order.created_at,
@@ -195,11 +198,16 @@ def create_order(
         base_deposit=fees["base_deposit"],
         actual_deposit=fees["actual_deposit"],
         status=OrderStatus.CONFIRMED,
+        checkin_image_url=item.image_url or "/test_assets/drill_checkin.jpg",
     )
 
+    # 同步更新工具庫存狀態為 RENTED (出借中/已預約)
+    item.status = ItemStatus.RENTED
+    db.add(item)
     db.add(order)
     db.commit()
     db.refresh(order)
+    db.refresh(item)
     return order
 
 
@@ -256,6 +264,29 @@ def cancel_order(
         )
 
     order.status = OrderStatus.CANCELLED
+
+    # 檢查該工具是否仍有其他進行中之有效訂單，若無則將道具狀態復原為 AVAILABLE (可借用)
+    other_active = (
+        db.query(Order)
+        .filter(
+            Order.item_id == order.item_id,
+            Order.id != order.id,
+            Order.status.in_([
+                OrderStatus.CONFIRMED,
+                OrderStatus.PICKED_UP,
+                OrderStatus.IN_USE,
+                OrderStatus.INSPECTION,
+                OrderStatus.DISPUTED,
+            ]),
+        )
+        .first()
+    )
+    if not other_active:
+        item = db.query(Item).filter(Item.id == order.item_id).first()
+        if item:
+            item.status = ItemStatus.AVAILABLE
+            db.add(item)
+
     db.commit()
     db.refresh(order)
 

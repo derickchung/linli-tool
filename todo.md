@@ -19,6 +19,7 @@ flowchart LR
     P3 --> P4["Phase 4<br/>交接核銷與爭議工單"]
     P2 & P4 --> P5["Phase 5<br/>AI Gateway與多模態"]
     P1 & P2 & P3 & P4 & P5 --> P6["Phase 6<br/>全系統整合與E2E"]
+    P6 --> P7["Phase 7<br/>獨立路由認證與守衛"]
 ```
 
 | Phase | 階段名稱 | 核心目標 | 獨立測試驗證方式 (Decoupled Testing) |
@@ -30,6 +31,7 @@ flowchart LR
 | **Phase 4** | 取件交接與存證狀態機 | 60s 動態核銷碼、照片 Hash、爭議工單 | 使用 Mock 差分結果（MATCH/DIFF），驗證訂單狀態機流轉與退押金 |
 | **Phase 5** | AI Gateway 與多模態進階 | 代理 Gemini API、D1 上架辨識、A2 搜尋 | 使用 Mock 或測試金鑰驗證 Prompt 解析、Rate Limit 與 4 大降級策略 |
 | **Phase 6** | 前後端整合與 E2E 驗收 | 前端對接真實 API、全鏈路情境驗收 | 自動化測試腳本跑通「無傷結案」與「損壞觸發賠償池」完整流程 |
+| **Phase 7** | 獨立路由認證與守衛重構 | 實作 /login、/login/otp 路由、RequireAuth 守衛、白名單檢驗與 30s 重發冷卻 | 路由跳轉單元測試、未登入攔截測試、30s 冷卻計時器與記憶體登入態驗證 |
 
 ---
 
@@ -226,3 +228,40 @@ flowchart LR
     2. Check-out 照片顯示噴槍外殼斷裂 $\rightarrow$ Gemini 判定 DAMAGE_DETECTED。
     3. 後端依公式計算殘值與應賠額，押金扣抵後差額自賠償池提撥。
     4. 建立爭議工單，凍結款項並通知出借雙方。
+
+---
+
+## Phase 7：獨立路由登入流程與白名單驗證重構 (SPEC_01 Extension: Standalone Auth Flow)
+
+> **階段目標**：依據手機門號驗證流程圖（`RequireAuth` ➔ `/login` ➔ `/login/otp` ➔ `/explore`），將現有單頁 Modal 登入架構重構為獨立多路由架構，導入全域路由守衛、門號已知帳號白名單檢驗、30 秒重發冷卻與 In-Memory 登入狀態管理。  
+> **獨立驗收**：未登入者存取受保護路由被 `RequireAuth` 強制重定向至 `/login`；未知門號輸入被即時阻斷於 `/login`；OTP 輸入介面具備 30 秒倒數計時與清空重填；驗證通過後 `refreshUser()` 寫入記憶體並自動導向 `/explore`。
+
+- [ ] **Task 7.1：前端多路由架構與 RequireAuth 路由守衛 (`frontend/src/`)**
+  - [ ] 導入前端路由庫（`react-router-dom`），建置獨立頁面路由架構：
+    - 認證與登入路由：`/login`（門號輸入）、`/login/otp`（6 碼驗證碼輸入）
+    - 平台主應用路由：`/explore`（探索主頁）、`/list`（上架）、`/cart`（預約）、`/checkin`（取件）、`/return`（歸還）
+  - [ ] 實作全域路由守衛元件 `RequireAuth`（步驟 ①）：
+    - 於 App 啟動及存取頁面時檢核 `currentUser` 狀態。
+    - **已登入**：放行進入目標頁面。
+    - **未登入**：全面攔截並自動導向 `/login` 頁面。
+- [ ] **Task 7.2：`/login` 門號輸入與已知帳號檢核 (`routers/auth.py`, `frontend/src/`)**
+  - [ ] 介面建置：建立 `/login` 頁面，提供符合台灣手機格式（`09xxxxxxxx`）之輸入欄位與送出按鈕。
+  - [ ] 實作 `requestOtp(phone)` 與門號白名單檢核（步驟 ②）：
+    - 門號檢核（是否為已知帳號？）：
+      - **否（未知帳號）**：彈出紅框警示「查無此門號 請重新輸入」，阻斷發送 OTP，維持在 `/login` 頁面。
+      - **是（已知帳號）**：向後端請求發送驗證碼，並透過 `router state` 將 `phone` 傳入，跳轉至 `/login/otp`（步驟 ③）。
+  - [ ] 後端端點擴充：於 `/api/v1/auth/otp/send` 增加門號白名單檢查參數，或新增 `/api/v1/auth/check-phone` 供前端前置核驗。
+- [ ] **Task 7.3：`/login/otp` 驗證碼頁面與 30 秒重發冷卻 (`frontend/src/`)**
+  - [ ] 介面建置：建立 `/login/otp` 頁面，自 `router state` 提取門號，提供 6 碼數字輸入框。
+  - [ ] 實作 30 秒重新發送冷卻計時器（步驟 ③ 虛線回流）：
+    - 發送驗證碼後啟動 30 秒倒數計時（`cooldown = 30s`），期間鎖定重發按鈕。
+    - 倒數結束後恢復按鈕，點擊仍呼叫 `requestOtp(phone)`。
+  - [ ] 實作 `verifyOtp(phone, code)` 與格式校驗（步驟 ④）：
+    - 檢核「帳號存在且為 6 位數字」。
+    - 驗證碼不正確或失效：彈出紅框警示「驗證碼不正確 清空重填」，清空輸入欄位並留在 `/login/otp`。
+    - 驗證成功：執行 `refreshUser()`。
+- [ ] **Task 7.4：In-Memory 登入態管理與探索頁跳轉 (`frontend/src/`)**
+  - [ ] 實作 `refreshUser()` 函式（步驟 ⑤）：
+    - 將驗證通過之使用者資訊寫入 `currentUser` 狀態。
+    - **僅記憶體機制（In-Memory Only）**：不持久化至 LocalStorage 或 SessionStorage，確保關閉瀏覽器或重整時符合安全規範。
+  - [ ] 路由導向：登入成功後自動導向 `/explore` 探索主頁。

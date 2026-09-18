@@ -7,6 +7,8 @@ from ..models import User
 from ..schemas import (
     RAGFAQRequest,
     RAGFAQResponse,
+    RAGAskAIRequest,
+    RAGAskAIResponse,
     SafetyAlertResponse,
     EquipmentHealthResponse,
     A2RecommendRequest,
@@ -67,6 +69,25 @@ def search_faq(req: RAGFAQRequest):
     )
 
 
+@router.post("/ask-ai", response_model=RAGAskAIResponse, summary="U1 知識庫 AI 智能問答 (RAG QA)")
+def ask_ai_endpoint(
+    req: RAGAskAIRequest,
+    current_user: User | None = Depends(get_optional_user),
+):
+    """
+    結合本地知識庫手冊 (RAG Context) 與 Gemini AI 生成精準操作指南與排除建議。
+    - 即時檢索手冊條目作為 Context 注入給 Gemini。
+    - 以吉祥物狸利工程師口吻親切解答，強調工安防護，嚴禁出現違規名詞。
+    """
+    kb = LocalKnowledgeBase.get_instance()
+    res = kb.ask_ai_with_rag(
+        question=req.question,
+        tool_id=req.tool_id,
+        tool_name=req.tool_name,
+    )
+    return RAGAskAIResponse(**res)
+
+
 @router.get(
     "/damage-criteria/{tool_id}",
     response_model=DamageCriteriaResponse,
@@ -97,6 +118,7 @@ def get_tool_content_endpoint(
     tool_id: str,
     query: Optional[str] = Query(None, description="過濾問題或關鍵字"),
     category: Optional[str] = Query(None, description="指定分類（操作手冊/安全警語/常見問題/規格/套裝內容）"),
+    tool_name: Optional[str] = Query(None, description="工具品名輔助匹配"),
 ):
     """
     U1 取件後安全與操作指引端點。
@@ -105,6 +127,8 @@ def get_tool_content_endpoint(
     """
     kb = LocalKnowledgeBase.get_instance()
     results = kb.find_content_by_tool(tool_id, query=query, category=category)
+    if not results and tool_name:
+        results = kb.find_content_by_tool(tool_name, query=query, category=category)
     return [ToolContentChunkResponse(**r) for r in results]
 
 

@@ -13,7 +13,8 @@ export type OrderStatus =
   | 'INSPECTION'
   | 'COMPLETED'
   | 'CANCELLED'
-  | 'DISPUTED';
+  | 'DISPUTED'
+  | 'REJECTED_RETAKE';
 
 export type DisputeStatus = 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED' | 'REJECTED';
 
@@ -25,6 +26,9 @@ export interface VisionEvaluation {
   difference_notes: string;
   recommended_angle?: string;
   requires_retake?: boolean;
+  ai_model?: string;
+  duration_ms?: number;
+  token_cost_estimate?: number;
 }
 
 export interface UserProfile {
@@ -75,6 +79,10 @@ export interface Item {
   safety_notes?: string;
   image_url?: string;
   created_at?: string;
+  brand?: string;
+  short_name?: string;
+  walk_time?: string;
+  display_tags?: string[];
 }
 
 export interface ItemListResponse {
@@ -105,8 +113,11 @@ export interface OrderCalculateResponse {
 
 export interface OrderCreateRequest {
   item_id: number;
-  start_date: string;
-  end_date: string;
+  start_date?: string;
+  end_date?: string;
+  rent_days?: number;
+  payment_method?: string;
+  notes?: string;
 }
 
 export interface OrderResponse {
@@ -118,17 +129,21 @@ export interface OrderResponse {
   renter_name?: string;
   lender_id: number;
   lender_name?: string;
-  start_date: string;
-  end_date: string;
-  rent_days: number;
-  daily_rate: number;
+  start_date?: string;
+  end_date?: string;
+  rent_days?: number;
+  daily_rate?: number;
   total_rent: number;
   base_deposit: number;
   actual_deposit: number;
   status: OrderStatus;
   compensation_amount?: number;
   pool_payout?: number;
-  created_at: string;
+  created_at?: string;
+  checkin_image_url?: string;
+  checkin_sha256?: string;
+  item?: any;
+  renter?: any;
 }
 
 export interface HandoverCodeResponse {
@@ -187,6 +202,8 @@ export interface ItemRecognizeResponse {
   damage_tool_id_match?: string;
   suggested_accessories: string[];
   safety_warning: string;
+  is_recognized?: boolean;
+  unrecognized_reason?: string;
 }
 
 // Aliases for compatibility with Vision AI service

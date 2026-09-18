@@ -209,6 +209,19 @@ class RAGFAQResponse(BaseModel):
     related_qas: List[FAQMatch] = Field(default_factory=list)
 
 
+class RAGAskAIRequest(BaseModel):
+    question: str = Field(..., description="住戶修繕或工具操作提問")
+    tool_id: Optional[str] = Field(None, description="特定工具代碼 (可選)")
+    tool_name: Optional[str] = Field(None, description="工具名稱 (可選)")
+
+
+class RAGAskAIResponse(BaseModel):
+    answer: str
+    source_chunks: List[str] = Field(default_factory=list)
+    is_ai_generated: bool = True
+    mascot_tip: str = "狸利工程師隨時為您解答工具使用問題，安全第一！"
+
+
 class SafetyAlertResponse(BaseModel):
     category: str
     risk_level: str
@@ -296,8 +309,11 @@ class OrderCalculateResponse(BaseModel):
 
 class OrderCreateRequest(BaseModel):
     item_id: int = Field(..., description="預約租借之工具 ID")
-    start_date: date = Field(..., description="起租日期 (YYYY-MM-DD)")
-    end_date: date = Field(..., description="歸還日期 (YYYY-MM-DD)")
+    start_date: Optional[date] = Field(None, description="起租日期 (YYYY-MM-DD)")
+    end_date: Optional[date] = Field(None, description="歸還日期 (YYYY-MM-DD)")
+    rent_days: Optional[int] = Field(None, description="租借天數")
+    payment_method: Optional[str] = Field("CREDIT_CARD", description="支付方式")
+    notes: Optional[str] = Field(None, description="預約備註")
 
 
 class OrderResponse(BaseModel):
@@ -319,6 +335,9 @@ class OrderResponse(BaseModel):
     base_deposit: int
     actual_deposit: int
     status: str
+    checkin_image_url: Optional[str] = None
+    checkout_image_url: Optional[str] = None
+    vision_result: Optional[str] = None
     compensation_amount: int = 0
     pool_payout: int = 0
     created_at: datetime
@@ -379,16 +398,19 @@ class HandoverCodeResponse(BaseModel):
     handover_code: str
     expires_in_seconds: int
     qr_payload: str
+    locker_box: str = "B-03 格口"
+    locker_location: str = "新店陽光花園 A棟大廳 1號工具保管櫃"
 
 
 class HandoverVerifyRequest(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6, description="6位數取件核銷碼")
+    code: str = Field(..., min_length=4, max_length=30, description="取件核銷碼或開櫃碼 (支援 6 碼 PIN 或展示 Bypass)")
 
 
 class HandoverVerifyResponse(BaseModel):
     success: bool
     status: str
     message: str
+    locker_box: Optional[str] = "B-03 格口"
 
 
 class CheckInRequest(BaseModel):
@@ -453,12 +475,17 @@ class ItemRecognizeResponse(BaseModel):
     damage_tool_id_match: Optional[str] = None
     suggested_accessories: List[str] = Field(default_factory=list)
     safety_warning: str
+    is_recognized: Optional[bool] = True
+    unrecognized_reason: Optional[str] = None
 
 
 class CheckOutRequest(BaseModel):
     image_url: Optional[str] = Field(None, description="歸還存證照片 URL")
     image_base64: Optional[str] = Field(None, description="歸還存證照片 Base64")
+    checkin_image_url: Optional[str] = Field(None, description="取件存證照片 URL (可選，若無則由後端訂單載入)")
+    checkin_image_base64: Optional[str] = Field(None, description="取件存證照片 Base64 (可選，若無則由後端訂單載入)")
     notes: Optional[str] = Field(None, description="歸還備註說明")
+    confirm_complete: Optional[bool] = Field(False, description="是否確認接受扣抵或完好結案並正式將訂單推進至 COMPLETED")
 
 
 class CheckOutResponse(BaseModel):
@@ -485,6 +512,15 @@ class ToolConsistencyResponse(BaseModel):
     requires_retake: bool = Field(..., description="是否需要重新拍照")
     mismatch_reason: Optional[str] = Field(None, description="不一致或重拍原因說明")
     token_cost_estimate: int = Field(default=258, description="邊緣壓縮後預估 Vision Token 消耗數")
+
+
+class SameObjectVerifyRequest(BaseModel):
+    image_base64: Optional[str] = Field(None, description="現場取件照片之 Base64 編碼字串")
+    image_url: Optional[str] = Field(None, description="現場取件照片之 URL 或本機路徑")
+    original_image_base64: Optional[str] = Field(None, description="出借人原始上架照片之 Base64 編碼字串")
+    original_image_url: Optional[str] = Field(None, description="出借人原始上架照片之 URL 或本機路徑")
+    item_name: Optional[str] = Field(default="工具", description="登記之工具品名")
+    filename_hint: Optional[str] = Field(None, description="相片檔名提示")
 
 
 class SameObjectVerifyResponse(BaseModel):

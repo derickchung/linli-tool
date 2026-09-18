@@ -41,6 +41,18 @@ def resolve_tool_id(raw_id: Optional[str]) -> Optional[str]:
     for k, v in TOOL_ID_MAP.items():
         if k.lower() == raw_id.strip().lower() or v.lower() == raw_id.strip().lower():
             return v
+    # Keyword & brand fallback resolution to knowledge base canonical IDs
+    r_lower = raw_id.strip().lower()
+    if any(w in r_lower for w in ["drill", "電鑽", "震動", "衝擊", "dewalt", "得偉", "makita", "牧田", "milwaukee", "美沃奇", "bosch"]):
+        return "bosch-gsb185li-30pc"
+    if any(w in r_lower for w in ["ladder", "梯", "a字梯", "折疊梯", "工作梯"]):
+        return "generic-aframe-ladder-6step"
+    if any(w in r_lower for w in ["washer", "清洗機", "高壓", "karcher", "凱馳"]):
+        return "karcher-k3-power-control"
+    if any(w in r_lower for w in ["projector", "投影機", "雷射", "jmgo", "目氪"]):
+        return "jmgo-n1s-infinity-4k"
+    if any(w in r_lower for w in ["tent", "帳篷", "別墅帳", "隧道帳", "snowpeak"]):
+        return "snowpeak-landnest-tp259"
     return raw_id.strip().lower()
 
 
@@ -467,6 +479,98 @@ class LocalKnowledgeBase:
             matched_tool_id=best_entry.tool_id,
             related_qas=related,
         )
+
+    def ask_ai_with_rag(
+        self,
+        question: str,
+        tool_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        結合本地知識庫手冊 (RAG Context) 與 Gemini AI 進行生成式即時問答。
+        """
+        relevant_chunks = []
+        canonical_tid = resolve_tool_id(tool_id or tool_name or "")
+        if canonical_tid:
+            chunks = self.find_content_by_tool(canonical_tid, query=question)
+            if not chunks:
+                chunks = self.find_content_by_tool(canonical_tid)
+            relevant_chunks.extend(chunks[:4])
+        else:
+            faq_res = self.search_faq(question, tool_name=tool_name, tool_id=tool_id)
+            if faq_res.confidence > 0:
+                relevant_chunks.append({
+                    "content": f"Q: {question}\nA: {faq_res.answer}",
+                    "source_ref": faq_res.source,
+                })
+
+        context_text = "\n\n".join([f"【參考來源: {c.get('source_ref', '官方手冊')}】\n{c.get('content', '')}" for c in relevant_chunks])
+        if not context_text:
+            context_text = "目前知識庫無直接完全符合之單一條目，請依居家工具安全操作與維護原則解答。"
+
+        prompt = (
+            f"住戶提問: {question}\n"
+            f"指定工具: {tool_name or tool_id or '未指定'}\n\n"
+            f"【官方知識庫檢索條目】:\n{context_text}\n\n"
+            f"請以社區工具共享平台吉祥物「狸利工程師」的友善專業口吻回答，步驟條理分明、強調防護與安全，依據手冊提供建議，嚴格遵守主管機關規定，禁止出現任何特許金融字詞。"
+        )
+
+        from ..ai.gateway import AIGateway
+        gateway = AIGateway.get_instance()
+        try:
+            raw_ans = gateway.client.generate_content(
+                prompt=prompt,
+                system_instruction="你是社區工具共享平台的專業 AI 修繕顧問「狸利工程師」。請以親切、專業且注重工安的語氣回答，禁止出現特許金融名詞，全面遵守互助保障池規範。",
+            )
+            clean_ans = raw_ans.strip()
+            if not clean_ans or clean_ans == "{}" or clean_ans.startswith("【狸利工程師修繕指南】\n我是鄰里工具工程師狸利，暫時沒有找到"):
+                if relevant_chunks:
+                    summary_lines = []
+                    for c in relevant_chunks:
+                        content_snip = c.get("content", "").strip()
+                        if content_snip:
+                            summary_lines.append(content_snip)
+                    joined_info = "\n\n• ".join(summary_lines[:3])
+                    clean_ans = (
+                        f"【狸利工程師修繕指南】\n"
+                        f"嗨！我是鄰里工具工程師狸利。為您依據官方知識庫彙整【{tool_name or '該裝備'}】之操作與安全指引：\n\n"
+                        f"• {joined_info}\n\n"
+                        f"🦫 狸利貼心叮嚀：操作前請務必配戴護目鏡與工作防滑手套，站穩重心雙手持握機身，確認牆內無暗埋水電管線，安全第一！"
+                    )
+                else:
+                    faq_res = self.search_faq(question, tool_name=tool_name, tool_id=tool_id)
+                    clean_ans = f"【狸利工程師修繕指南】\n{faq_res.answer}"
+
+            return {
+                "answer": clean_ans,
+                "source_chunks": [c.get("source_ref", "知識庫手冊") for c in relevant_chunks],
+                "is_ai_generated": gateway.client.use_real_api and bool(raw_ans and raw_ans != "{}"),
+                "mascot_tip": "狸利工程師隨時為您解答工具使用問題，安全第一！",
+            }
+        except Exception:
+            if relevant_chunks:
+                summary_lines = [c.get("content", "").strip() for c in relevant_chunks if c.get("content")]
+                joined_info = "\n\n• ".join(summary_lines[:3])
+                clean_ans = (
+                    f"【狸利工程師修繕指南】\n"
+                    f"嗨！我是鄰里工具工程師狸利。為您依據官方知識庫彙整【{tool_name or '該裝備'}】之操作與安全指引：\n\n"
+                    f"• {joined_info}\n\n"
+                    f"🦫 狸利貼心叮嚀：操作前請務必配戴護目鏡與工作防滑手套，站穩重心雙手持握機身，安全第一！"
+                )
+                return {
+                    "answer": clean_ans,
+                    "source_chunks": [c.get("source_ref", "知識庫手冊") for c in relevant_chunks],
+                    "is_ai_generated": False,
+                    "mascot_tip": "狸利工程師依據本地官方知識庫手冊為您即時解答。",
+                }
+            faq_res = self.search_faq(question, tool_name=tool_name, tool_id=tool_id)
+            return {
+                "answer": f"【狸利工程師修繕指南】\n{faq_res.answer}",
+                "source_chunks": [faq_res.source],
+                "is_ai_generated": False,
+                "mascot_tip": "狸利工程師降級至本地操作手冊檢索。",
+            }
+
 
 
 # ==============================

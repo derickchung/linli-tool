@@ -152,8 +152,8 @@ class Order(Base):
 
     handover_code = Column(String(10), nullable=True)
     handover_code_expires = Column(DateTime, nullable=True)
-    checkin_image_url = Column(String(255), nullable=True)
-    checkout_image_url = Column(String(255), nullable=True)
+    checkin_image_url = Column(Text, nullable=True)
+    checkout_image_url = Column(Text, nullable=True)
     vision_result = Column(String(30), nullable=True)
     compensation_amount = Column(Integer, default=0)
     pool_payout = Column(Integer, default=0)

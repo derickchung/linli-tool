@@ -13,6 +13,7 @@ from ..schemas import (
     EquipmentHealthResponse,
     ItemRecognizeResponse,
     ToolConsistencyResponse,
+    SameObjectVerifyRequest,
     SameObjectVerifyResponse,
 )
 from .auth import get_current_user, get_validated_user
@@ -55,6 +56,19 @@ async def recognize_tool(
                 hint = str(form.get("filename_hint"))
         except Exception as e:
             print(f"[Warning] Failed to parse multipart form in recognize_tool: {e}")
+    elif "application/json" in content_type:
+        try:
+            body = await request.json()
+            if "image_base64" in body and body["image_base64"]:
+                import base64
+                b64_str = body["image_base64"]
+                if "," in b64_str:
+                    b64_str = b64_str.split(",", 1)[1]
+                image_bytes = base64.b64decode(b64_str)
+            if not hint and "filename_hint" in body:
+                hint = body.get("filename_hint")
+        except Exception as e:
+            print(f"[Warning] Failed to parse json in recognize_tool: {e}")
 
     gateway = AIGateway.get_instance()
     return gateway.recognize_tool(
@@ -124,6 +138,15 @@ async def verify_tool_consistency(
     )
 
 
+@router.get("/ai-status", summary="查詢 AI Gateway 與 Gemini Vision 連線狀態")
+def get_ai_status_endpoint():
+    """
+    查詢 Gemini Vision API 連線狀態、金鑰配置與當前啟用引擎。
+    """
+    gateway = AIGateway.get_instance()
+    return gateway.client.get_ai_status()
+
+
 @router.post(
     "/verify-same-object",
     response_model=SameObjectVerifyResponse,
@@ -139,11 +162,39 @@ async def verify_same_object(
     Check-in 取件現場照片 vs 原始上架照片 特徵核對。
     防止拿錯工具、品牌調包或上傳無關生活雜物。
     """
-    image_bytes = None
-    hint = None
+    import os
+    import base64
+    from pathlib import Path
+
+    # 依據 robust-engineering 規範：頂層顯式初始化所有變數，物理性杜絕 UnboundLocalError
+    image_bytes: Optional[bytes] = None
+    original_bytes: Optional[bytes] = None
+    hint: Optional[str] = None
+    image_url: Optional[str] = None
+
     content_type = request.headers.get("content-type", "")
 
-    if "multipart/form-data" in content_type:
+    if "application/json" in content_type:
+        try:
+            body_json = await request.json()
+            req_obj = SameObjectVerifyRequest(**body_json)
+            if not item_name and req_obj.item_name:
+                item_name = req_obj.item_name
+            if not original_image_url and req_obj.original_image_url:
+                original_image_url = req_obj.original_image_url
+            if req_obj.image_url:
+                image_url = req_obj.image_url
+            if req_obj.filename_hint:
+                hint = req_obj.filename_hint
+            if req_obj.image_base64:
+                b64_str = req_obj.image_base64.split(",", 1)[1] if "," in req_obj.image_base64 else req_obj.image_base64
+                image_bytes = base64.b64decode(b64_str)
+            if req_obj.original_image_base64:
+                b64_orig = req_obj.original_image_base64.split(",", 1)[1] if "," in req_obj.original_image_base64 else req_obj.original_image_base64
+                original_bytes = base64.b64decode(b64_orig)
+        except Exception as e:
+            print(f"[Warning] Failed to parse json via SameObjectVerifyRequest: {e}")
+    elif "multipart/form-data" in content_type:
         try:
             form = await request.form()
             uploaded_file = form.get("file")
@@ -155,38 +206,108 @@ async def verify_same_object(
                 item_name = str(form.get("item_name"))
             if "original_image_url" in form:
                 original_image_url = str(form.get("original_image_url"))
+            if "image_url" in form:
+                image_url = str(form.get("image_url"))
             if "filename_hint" in form:
                 hint = str(form.get("filename_hint"))
         except Exception as e:
             print(f"[Warning] Failed to parse multipart form in verify_same_object: {e}")
-    elif "application/json" in content_type:
-        try:
-            body = await request.json()
-            if not item_name:
-                item_name = body.get("item_name")
-            if not original_image_url:
-                original_image_url = body.get("original_image_url")
-            if "image_base64" in body and body["image_base64"]:
+
+    from pathlib import Path
+    project_root = Path(__file__).resolve().parent.parent.parent
+
+    # 嘗試載入現場照片二進位 (支援 image_url、Base64 或檔名提示)
+    if not image_bytes and image_url:
+        if image_url.startswith("data:"):
+            try:
                 import base64
-                b64_str = body["image_base64"]
-                if "," in b64_str:
-                    b64_str = b64_str.split(",", 1)[1]
+                b64_str = image_url.split(",", 1)[1] if "," in image_url else image_url
                 image_bytes = base64.b64decode(b64_str)
-            hint = body.get("filename_hint")
-        except Exception as e:
-            print(f"[Warning] Failed to parse json in verify_same_object: {e}")
+            except Exception:
+                pass
+        else:
+            fname = os.path.basename(image_url.split("?")[0])
+            hint_candidates = [
+                project_root / "frontend" / "public" / "test_assets" / fname,
+                project_root / "frontend" / "dist" / "test_assets" / fname,
+                project_root / "test_assets" / fname,
+                project_root / "frontend" / "public" / fname,
+                project_root / fname,
+                Path(os.getcwd()) / "frontend" / "public" / "test_assets" / fname,
+                Path(os.getcwd()) / fname,
+            ]
+            for hp in hint_candidates:
+                if hp.exists():
+                    try:
+                        with open(hp, "rb") as f:
+                            image_bytes = f.read()
+                        break
+                    except Exception:
+                        pass
+
+    if not image_bytes and hint:
+        import re
+        m = re.search(r"([\w\-]+\.(?:jpg|jpeg|png))", hint, re.IGNORECASE)
+        if m:
+            fname_hint = m.group(1)
+            hint_candidates = [
+                project_root / "frontend" / "public" / "test_assets" / fname_hint,
+                project_root / "frontend" / "dist" / "test_assets" / fname_hint,
+                project_root / "test_assets" / fname_hint,
+                project_root / "frontend" / "public" / fname_hint,
+                project_root / fname_hint,
+                Path(os.getcwd()) / "frontend" / "public" / "test_assets" / fname_hint,
+                Path(os.getcwd()) / fname_hint,
+            ]
+            for hp in hint_candidates:
+                if hp.exists():
+                    try:
+                        with open(hp, "rb") as f:
+                            image_bytes = f.read()
+                        break
+                    except Exception:
+                        pass
+
+    # 嘗試載入出借人原始相片二進位以供雙圖比對
+    if not original_bytes and original_image_url:
+        if original_image_url.startswith("data:"):
+            try:
+                import base64
+                b64_orig = original_image_url.split(",", 1)[1] if "," in original_image_url else original_image_url
+                original_bytes = base64.b64decode(b64_orig)
+            except Exception:
+                pass
+        else:
+            fname = os.path.basename(original_image_url.split("?")[0])
+            candidate_paths = [
+                project_root / "frontend" / "public" / "test_assets" / fname,
+                project_root / "frontend" / "dist" / "test_assets" / fname,
+                project_root / "test_assets" / fname,
+                project_root / "frontend" / "public" / fname,
+                project_root / fname,
+                Path(os.getcwd()) / "frontend" / "public" / "test_assets" / fname,
+                Path(os.getcwd()) / fname,
+            ]
+            for cp in candidate_paths:
+                if cp.exists():
+                    try:
+                        with open(cp, "rb") as f:
+                            original_bytes = f.read()
+                        break
+                    except Exception:
+                        pass
 
     gateway = AIGateway.get_instance()
-    hint_text = f"{hint or ''} {original_image_url or ''}"
+    hint_text = hint or ""
     res = gateway.verify_same_object(
         user_id=current_user.id,
-        original_image_bytes=None,
+        original_image_bytes=original_bytes,
         checkin_image_bytes=image_bytes,
         item_name=item_name or "修繕工具",
         hint_text=hint_text,
     )
     return SameObjectVerifyResponse(
-        is_same_object=res.get("is_same_object", True),
+        is_same_object=res.get("is_same_object", False),
         confidence=float(res.get("confidence", 0.9)),
         difference_notes=res.get("difference_notes", "特徵吻合，確認為同一實體物件。"),
         requires_retake=res.get("requires_retake", False),
@@ -215,7 +336,7 @@ def create_item(
 def list_items(
     query: Optional[str] = Query(None, description="關鍵字搜尋 (品名或注意事項)"),
     category: Optional[str] = Query(None, description="工具類別篩選"),
-    status: Optional[str] = Query("AVAILABLE", description="工具狀態篩選 (預設 AVAILABLE)"),
+    status: Optional[str] = Query(None, description="工具狀態篩選 (若未指定或為 ALL 則回傳全量狀態，包括 AVAILABLE 與 RENTED)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
