@@ -5775,7 +5775,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setActiveTab('auth')}
+                onClick={() => setIsLoginModalOpen(true)}
                 className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold px-3 py-2 rounded-xl transition-colors cursor-pointer shrink-0"
               >
                 切換身分 / 登入
