@@ -376,6 +376,9 @@ export default function App() {
   const [isMobileView, setIsMobileView] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
+        // 手機或小於 768px 螢幕：100% 強制呈現原生手機版介面
+        if (window.innerWidth < 768) return true;
+
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('view') === 'wide') return false;
         if (urlParams.get('view') === 'mobile') return true;
