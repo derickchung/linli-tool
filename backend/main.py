@@ -1,11 +1,23 @@
+import os
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
 from .routers import auth, users, communities, items, rag, orders, disputes
 
-# Create tables if not existing
+# Create tables if not existing and seed initial baseline inventory
 Base.metadata.create_all(bind=engine)
+try:
+    from .seed import seed_initial_data
+    seed_initial_data()
+except Exception as e:
+    print(f"[Warning] Seed initial data failed: {e}")
 
 app = FastAPI(
     title="LinLi Tool API",
@@ -14,13 +26,24 @@ app = FastAPI(
 )
 
 # CORS Middleware configuration
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "*")
+if allowed_origins_env.strip() == "*":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    allowed_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Mount Routers
 app.include_router(auth.router)

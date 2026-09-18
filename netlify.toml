@@ -1,0 +1,11 @@
+# LinLi Tool - Netlify Configuration
+[build]
+  base = "frontend"
+  publish = "dist"
+  command = "npm run build"
+
+# SPA Fallback: Rewrite all client routes to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

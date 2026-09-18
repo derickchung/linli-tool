@@ -42,7 +42,10 @@ class ApiClient {
   private tokenKey = 'linli_auth_token';
 
   constructor() {
-    this.baseUrl = (typeof window !== 'undefined' && (window as any).__API_BASE_URL__) || 'http://localhost:8000/api/v1';
+    this.baseUrl =
+      (typeof window !== 'undefined' && (window as any).__API_BASE_URL__) ||
+      (import.meta.env && import.meta.env.VITE_API_BASE_URL) ||
+      'http://localhost:8000/api/v1';
   }
 
   public setToken(token: string): void {
@@ -114,6 +117,16 @@ class ApiClient {
       const res = await this.request<{ access_token: string; token_type: string; user: UserProfile }>('/auth/otp/verify', {
         method: 'POST',
         body: JSON.stringify({ phone, otp: otpCode }),
+      });
+      if (res.access_token) {
+        this.setToken(res.access_token);
+      }
+      return res;
+    },
+
+    getDemoToken: async (role = 'renter'): Promise<{ access_token: string; token_type: string; user: UserProfile }> => {
+      const res = await this.request<{ access_token: string; token_type: string; user: UserProfile }>(`/auth/demo-token?role=${role}`, {
+        method: 'POST',
       });
       if (res.access_token) {
         this.setToken(res.access_token);
@@ -227,6 +240,7 @@ class ApiClient {
       image_base64?: string;
       image_url?: string;
       filename_hint?: string;
+      original_image_base64?: string;
       original_image_url?: string;
       item_name?: string;
     }): Promise<SameObjectVerifyResponse> => {
@@ -235,6 +249,7 @@ class ApiClient {
         formData.append('file', data.file, (data.file as File).name || 'checkin_photo.jpg');
         if (data.item_name) formData.append('item_name', data.item_name);
         if (data.original_image_url) formData.append('original_image_url', data.original_image_url);
+        if (data.original_image_base64) formData.append('original_image_base64', data.original_image_base64);
         if (data.filename_hint) formData.append('filename_hint', data.filename_hint);
         return api.request<SameObjectVerifyResponse>('/items/verify-same-object', {
           method: 'POST',
@@ -247,6 +262,7 @@ class ApiClient {
             image_base64: data.image_base64,
             image_url: data.image_url,
             filename_hint: data.filename_hint,
+            original_image_base64: data.original_image_base64,
             original_image_url: data.original_image_url,
             item_name: data.item_name,
           }),
@@ -315,6 +331,26 @@ class ApiClient {
         body: JSON.stringify(data),
       });
     },
+
+    /**
+     * 歸還 Check-out 雙圖 AI 差分檢驗結案
+     */
+    checkOut: async (
+      orderId: number,
+      data: { image_url?: string; image_base64?: string; checkin_image_base64?: string; notes?: string; confirm_complete?: boolean }
+    ): Promise<any> => {
+      return this.request<any>(`/orders/${orderId}/check-out`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+
+    /**
+     * 取得進行中（可歸還）的訂單列表
+     */
+    listActive: async (): Promise<OrderResponse[]> => {
+      return this.request<OrderResponse[]>('/orders/active');
+    },
   };
 
   // ===================== Disputes Endpoints =====================
@@ -367,6 +403,13 @@ class ApiClient {
       return this.request<any[]>('/rag/scenario-tools', {
         method: 'POST',
         body: JSON.stringify({ prompt }),
+      });
+    },
+
+    askAI: async (data: { question: string; tool_name?: string; tool_id?: string }): Promise<{ answer: string; confidence: number; source_refs: string[]; warning_level?: string }> => {
+      return this.request('/rag/ask-ai', {
+        method: 'POST',
+        body: JSON.stringify(data),
       });
     },
   };
